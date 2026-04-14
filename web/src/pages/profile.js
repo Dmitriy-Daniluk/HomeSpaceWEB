@@ -1,0 +1,287 @@
+import { useState, useEffect } from 'react';
+import Head from 'next/head';
+import { User, Camera, Edit2, Save, X, Wallet, TrendingUp, TrendingDown, PiggyBank, Calendar, Phone, Mail, Users } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import api from '../utils/api';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import Badge from '../components/ui/Badge';
+import Loading from '../components/ui/Loading';
+
+export default function ProfilePage() {
+  const { user, updateUser } = useAuth();
+  const [profile, setProfile] = useState(null);
+  const [families, setFamilies] = useState([]);
+  const [editMode, setEditMode] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ full_name: '', birth_date: '', phone: '', email: '' });
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
+  useEffect(() => {
+    fetchProfile();
+    fetchFamilies();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const res = await api.get('/users/profile');
+      setProfile(res.data.data);
+      setForm({
+        full_name: res.data.data.full_name || '',
+        birth_date: res.data.data.birth_date ? res.data.data.birth_date.split('T')[0] : '',
+        phone: res.data.data.phone || '',
+        email: res.data.data.email || '',
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchFamilies = async () => {
+    try {
+      const res = await api.get('/families');
+      setFamilies(res.data.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const saveProfile = async () => {
+    setSaving(true);
+    try {
+      const res = await api.put('/users/profile', form);
+      setProfile(res.data.data);
+      updateUser(res.data.data);
+      setEditMode(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setAvatarUploading(true);
+    const formData = new FormData();
+    formData.append('avatar', file);
+    try {
+      const res = await api.post('/users/avatar', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setProfile((prev) => ({ ...prev, avatar_url: res.data.data.avatar_url }));
+      updateUser({ avatar_url: res.data.data.avatar_url });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  if (loading) return <Loading text="Загрузка профиля..." />;
+
+  const stats = profile?.stats || {};
+  const personalBudget = stats.personalBudget || { total_income: 0, total_expense: 0 };
+  const familyBudget = stats.transactions || { total_income: 0, total_expense: 0 };
+  const personalTasks = stats.personalTasks || { total_tasks: 0, completed_tasks: 0 };
+  const familyTasks = stats.tasks || { total_tasks: 0, completed_tasks: 0 };
+
+  return (
+    <>
+      <Head><title>Профиль — HomeSpace</title></Head>
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Профиль</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">Управление аккаунтом</p>
+          </div>
+          <Button
+            variant={editMode ? 'secondary' : 'primary'}
+            onClick={() => editMode ? saveProfile() : setEditMode(true)}
+            loading={saving}
+            icon={editMode ? <Save className="w-4 h-4" /> : <Edit2 className="w-4 h-4" />}
+          >
+            {editMode ? 'Сохранить' : 'Редактировать'}
+          </Button>
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Profile Card */}
+          <Card className="lg:col-span-1">
+            <div className="text-center">
+              <div className="relative inline-block">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-3xl font-bold mx-auto">
+                  {profile?.avatar_url ? (
+                    <img src={profile.avatar_url} alt="" className="w-24 h-24 rounded-full object-cover" />
+                  ) : (
+                    (profile?.full_name || 'U').charAt(0)
+                  )}
+                </div>
+                <label className="absolute bottom-0 right-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-indigo-700 transition-colors">
+                  <Camera className="w-4 h-4 text-white" />
+                  <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={avatarUploading} />
+                </label>
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mt-4">{profile?.full_name}</h2>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">{profile?.email}</p>
+
+              {/* Subscription */}
+              <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                {profile?.has_subscription ? (
+                  <div>
+                    <Badge variant="success" dot>Подписка активна</Badge>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      До {new Date(profile.subscription_until).toLocaleDateString('ru-RU')}
+                    </p>
+                  </div>
+                ) : (
+                  <Badge variant="warning">Нет подписки</Badge>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Details */}
+          <div className="lg:col-span-2 space-y-6">
+            <Card>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Личные данные</h3>
+              <div className="space-y-4">
+                <Input
+                  label="Полное имя"
+                  value={form.full_name}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  disabled={!editMode}
+                  icon={<User className="w-4 h-4" />}
+                />
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <Input
+                    label="Дата рождения"
+                    type="date"
+                    value={form.birth_date}
+                    onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
+                    disabled={!editMode}
+                    icon={<Calendar className="w-4 h-4" />}
+                  />
+                  <Input
+                    label="Телефон"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    disabled={!editMode}
+                    icon={<Phone className="w-4 h-4" />}
+                  />
+                </div>
+                <Input
+                  label="Email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  disabled={!editMode}
+                  icon={<Mail className="w-4 h-4" />}
+                />
+              </div>
+            </Card>
+
+            {/* Personal Budget Stats */}
+            <Card>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <User className="w-5 h-5 text-indigo-500" />
+                Личный бюджет
+              </h3>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div className="text-center p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl">
+                  <TrendingUp className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{Number(personalBudget.total_income || 0).toLocaleString('ru-RU')} ₽</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Доход</p>
+                </div>
+                <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-xl">
+                  <TrendingDown className="w-8 h-8 text-red-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">{Number(personalBudget.total_expense || 0).toLocaleString('ru-RU')} ₽</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Расход</p>
+                </div>
+                <div className="text-center p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl">
+                  <PiggyBank className="w-8 h-8 text-indigo-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                    {(Number(personalBudget.total_income || 0) - Number(personalBudget.total_expense || 0)).toLocaleString('ru-RU')} ₽
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Баланс</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Family Budget Stats */}
+            <Card>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <Users className="w-5 h-5 text-purple-500" />
+                Семейный бюджет
+              </h3>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div className="text-center p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl">
+                  <TrendingUp className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{Number(familyBudget.total_income || 0).toLocaleString('ru-RU')} ₽</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Доход</p>
+                </div>
+                <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-xl">
+                  <TrendingDown className="w-8 h-8 text-red-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">{Number(familyBudget.total_expense || 0).toLocaleString('ru-RU')} ₽</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Расход</p>
+                </div>
+                <div className="text-center p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl">
+                  <PiggyBank className="w-8 h-8 text-indigo-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                    {(Number(familyBudget.total_income || 0) - Number(familyBudget.total_expense || 0)).toLocaleString('ru-RU')} ₽
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Баланс</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Tasks Stats */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Card className="text-center">
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3 flex items-center justify-center gap-2">
+                  <User className="w-4 h-4" /> Личные задачи
+                </h4>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{personalTasks.total_tasks || 0}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Выполнено: {personalTasks.completed_tasks || 0}
+                </p>
+              </Card>
+              <Card className="text-center">
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3 flex items-center justify-center gap-2">
+                  <Users className="w-4 h-4" /> Семейные задачи
+                </h4>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{familyTasks.total_tasks || 0}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Выполнено: {familyTasks.completed_tasks || 0}
+                </p>
+              </Card>
+            </div>
+
+            {/* Families */}
+            <Card>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Семейные группы</h3>
+              {families.length === 0 ? (
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Вы не состоите ни в одной семье</p>
+              ) : (
+                <div className="space-y-3">
+                  {families.map((f) => (
+                    <div key={f.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">{f.name}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{f.members?.length || 0} участников</p>
+                      </div>
+                      <Badge variant="primary">{f.role || 'Участник'}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

@@ -1,0 +1,16 @@
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T22:25:15.346Z"}
+{"level":"info","message":"SIGTERM received. Shutting down gracefully...","service":"homespace-api","timestamp":"2026-04-03T22:25:23.711Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T22:25:24.379Z"}
+{"level":"info","message":"SIGTERM received. Shutting down gracefully...","service":"homespace-api","timestamp":"2026-04-03T22:27:18.918Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T22:27:20.882Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T22:51:24.470Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T22:51:39.253Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T22:51:58.525Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T22:52:10.978Z"}
+{"level":"info","message":"SIGTERM received. Shutting down gracefully...","service":"homespace-api","timestamp":"2026-04-03T22:55:45.301Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T22:56:23.131Z"}
+{"level":"error","message":"POST /api/budget: Cannot add or update a child row: a foreign key constraint fails (`homespace_model`.`transactions`, CONSTRAINT `transactions_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`))","service":"homespace-api","stack":"Error: Cannot add or update a child row: a foreign key constraint fails (`homespace_model`.`transactions`, CONSTRAINT `transactions_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`))\n    at PromisePool.query (/app/node_modules/mysql2/lib/promise/pool.js:36:22)\n    at exports.addTransaction (/app/src/controllers/budgetController.js:62:33)\n    at Layer.handle [as handle_request] (/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (/app/node_modules/express/lib/router/route.js:149:13)\n    at validate (/app/src/middleware/validation.js:11:3)\n    at Layer.handle [as handle_request] (/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (/app/node_modules/express/lib/router/route.js:149:13)\n    at middleware (/app/node_modules/express-validator/lib/middlewares/check.js:16:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","timestamp":"2026-04-03T22:59:44.231Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T23:26:40.582Z"}
+{"level":"info","message":"SIGINT received. Shutting down gracefully...","service":"homespace-api","timestamp":"2026-04-03T23:26:43.696Z"}
+{"level":"info","message":"Server running on port 5001","service":"homespace-api","timestamp":"2026-04-03T23:26:44.595Z"}
+{"level":"info","message":"SIGTERM received. Shutting down gracefully...","service":"homespace-api","timestamp":"2026-04-04T20:39:02.858Z"}
