@@ -40,9 +40,13 @@ export default function AnalyticsPage() {
     try {
       const res = await api.get('/families');
       const data = res.data.data || [];
-      setFamilies(data);
-      if (data.length > 0) setSelectedFamilyId(String(data[0].id));
-      if (data.length === 0) setLoading(false);
+      const parentFamilies = data.filter((family) => (
+        family.role === 'parent' ||
+        (family.currentUserPermissions || family.current_user_permissions || []).includes('analytics.view')
+      ));
+      setFamilies(parentFamilies);
+      if (parentFamilies.length > 0) setSelectedFamilyId(String(parentFamilies[0].id));
+      if (parentFamilies.length === 0) setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
   };
 
@@ -126,7 +130,7 @@ export default function AnalyticsPage() {
     return (
       <>
         <Head><title>Аналитика — HomeSpace</title></Head>
-        <EmptyState icon={BarChart3} title="Нет семей для аналитики" description="Создайте семейную группу и назначьте задачи участникам." />
+        <EmptyState icon={BarChart3} title="Аналитика доступна родителю" description="Обычный участник не может просматривать семейную аналитику." />
       </>
     );
   }

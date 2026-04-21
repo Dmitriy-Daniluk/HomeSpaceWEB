@@ -11,8 +11,6 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import api from '../utils/api';
 
-const ADMIN_EMAILS = ['admin@homespace.local', 'admin@homespace.ru', 'admin@example.com'];
-
 const navItems = [
   { href: '/', icon: Home, label: 'Главная' },
   { href: '/dashboard', icon: CheckSquare, label: 'Задачи' },
@@ -32,6 +30,14 @@ const adminNavItems = [
   { href: '/admin', icon: Shield, label: 'Админ-панель' },
 ];
 
+const permissionByPath = {
+  '/budget': 'budget.view',
+  '/analytics': 'analytics.view',
+  '/files': 'files.view',
+  '/passwords': 'passwords.view',
+  '/location': 'location.view',
+};
+
 const pageThemeByPath = {
   '/admin': 'page-theme-admin',
   '/dashboard': 'page-theme-tasks',
@@ -49,9 +55,19 @@ const pageThemeByPath = {
   '/notifications': 'page-theme-notifications',
 };
 
+const isAdminUser = (user) => Boolean(user?.isAdmin || user?.is_admin || user?.role === 'admin');
+const isChildOnlyUser = (user) => Boolean(user?.isChildOnly || user?.is_child_only);
+const getUserPermissions = (user) => new Set(user?.pagePermissions || user?.page_permissions || user?.permissions || []);
+const canOpenPath = (user, path) => {
+  const permission = permissionByPath[path];
+  if (!permission) return true;
+  if (!isChildOnlyUser(user)) return true;
+  return getUserPermissions(user).has(permission);
+};
+
 export default function Layout({ children }) {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, loading } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -60,12 +76,19 @@ export default function Layout({ children }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
   const lastNotificationFetchRef = useRef(0);
 
-  const isAdmin = user && ADMIN_EMAILS.includes(user.email?.toLowerCase());
+  const isAdmin = isAdminUser(user);
+  const isChildOnly = isChildOnlyUser(user);
   const isAuthPage = ['/login', '/register', '/forgot-password'].includes(router.pathname);
   const isLanding = router.pathname === '/';
-  const visibleNavItems = isAdmin ? adminNavItems : navItems;
+  const visibleNavItems = isAdmin
+    ? adminNavItems
+    : navItems.filter((item) => {
+      if (isChildOnly && item.href === '/subscription') return false;
+      return canOpenPath(user, item.href);
+    });
   const pageThemeClass = pageThemeByPath[router.pathname] || 'page-theme-default';
   const searchItems = visibleNavItems;
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -78,6 +101,21 @@ export default function Layout({ children }) {
     setSearchQuery('');
     router.push(href);
   };
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setShowUserMenu(false);
+    try {
+      await logout();
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
+  useEffect(() => {
+    setLoggingOut(false);
+  }, [user?.id]);
 
   const fetchNotifications = useCallback(async () => {
     const now = Date.now();
@@ -107,24 +145,34 @@ export default function Layout({ children }) {
   }, []);
 
   useEffect(() => {
+    if (loading) return;
+
     if (!user && !isAuthPage && !isLanding) {
       const token = localStorage.getItem('token');
       if (!token) {
-        router.push('/login');
+        router.replace('/login');
       }
       return;
     }
     if (user && isAuthPage) {
-      router.push(isAdmin ? '/admin' : '/dashboard');
+      router.replace(isAdmin ? '/admin' : '/dashboard');
       return;
     }
     if (user && isAdmin && router.pathname !== '/admin') {
-      router.push('/admin');
+      router.replace('/admin');
+      return;
+    }
+    if (user && isChildOnly && router.pathname === '/subscription') {
+      router.replace('/dashboard');
+      return;
+    }
+    if (user && isChildOnly && !canOpenPath(user, router.pathname)) {
+      router.replace('/dashboard');
       return;
     }
     if (!user || isAuthPage || isLanding) return;
     fetchNotifications();
-  }, [user, isAdmin, isAuthPage, isLanding, fetchNotifications, router]);
+  }, [user, isAdmin, isChildOnly, isAuthPage, isLanding, loading, fetchNotifications, router]);
 
   if (isAuthPage) {
     return (
@@ -136,8 +184,11 @@ export default function Layout({ children }) {
   }
 
   if (isLanding) return children;
-  if (!user) return null;
-  if (user && isAdmin && router.pathname !== '/admin') return null;
+  if (loading) return <RouteStatus text="Проверяем сессию..." />;
+  if (!user) return <RouteStatus text="Открываем вход..." />;
+  if (user && isAdmin && router.pathname !== '/admin') return <RouteStatus text="Открываем админ-панель..." />;
+  if (user && isChildOnly && router.pathname === '/subscription') return <RouteStatus text="Открываем задачи..." />;
+  if (user && isChildOnly && !canOpenPath(user, router.pathname)) return <RouteStatus text="Открываем задачи..." />;
 
   return (
     <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 flex ${pageThemeClass}`}>
@@ -320,10 +371,11 @@ export default function Layout({ children }) {
                       )}
                       <div className="border-t border-gray-100 dark:border-gray-700 mt-1 pt-1">
                         <button
-                          onClick={() => { setShowUserMenu(false); logout(); }}
+                          onClick={handleLogout}
+                          disabled={loggingOut}
                           className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                         >
-                          <LogOut className="w-4 h-4" /> Выйти
+                          <LogOut className="w-4 h-4" /> {loggingOut ? 'Выходим...' : 'Выйти'}
                         </button>
                       </div>
                     </div>
@@ -337,6 +389,20 @@ export default function Layout({ children }) {
         <main className="page-canvas flex-1 p-4 lg:p-6 animate-fade-in">
           {children}
         </main>
+      </div>
+    </div>
+  );
+}
+
+function RouteStatus({ text }) {
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-6">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg">
+          <Sparkles className="w-6 h-6 text-white" />
+        </div>
+        <div className="w-10 h-10 border-4 border-gray-200 dark:border-gray-700 border-t-indigo-600 rounded-full animate-spin" />
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-300">{text}</p>
       </div>
     </div>
   );

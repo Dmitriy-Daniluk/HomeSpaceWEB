@@ -45,7 +45,25 @@ const decryptSecret = (value) => {
   ]).toString('utf8');
 };
 
+const tryDecryptSecret = (value) => {
+  try {
+    return {
+      ok: true,
+      value: decryptSecret(value),
+      encrypted: typeof value === 'string' && value.startsWith(PREFIX),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      value: null,
+      encrypted: typeof value === 'string' && value.startsWith(PREFIX),
+      error: error.message,
+    };
+  }
+};
+
 module.exports = {
   encryptSecret,
   decryptSecret,
+  tryDecryptSecret,
 };

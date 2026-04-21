@@ -12,6 +12,7 @@ CREATE TABLE users (
     birth_date DATE,
     phone VARCHAR(20),
     avatar_url VARCHAR(512),
+    role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
     has_subscription BOOLEAN DEFAULT FALSE,
     subscription_until DATETIME NULL,
     reset_token VARCHAR(500) NULL,
@@ -66,10 +67,33 @@ CREATE TABLE family_members (
     user_id INT NOT NULL,
     family_id INT NOT NULL,
     role ENUM('parent', 'child') NOT NULL DEFAULT 'child',
+    custom_role_id INT NULL,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, family_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE
+);
+
+CREATE TABLE family_roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    family_id INT NOT NULL,
+    name VARCHAR(50) NOT NULL,
+    color VARCHAR(20) NOT NULL DEFAULT '#6366f1',
+    created_by INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY family_roles_family_name_unique (family_id, name),
+    FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX (family_id)
+);
+
+CREATE TABLE family_role_permissions (
+    family_role_id INT NOT NULL,
+    permission VARCHAR(80) NOT NULL,
+    PRIMARY KEY (family_role_id, permission),
+    FOREIGN KEY (family_role_id) REFERENCES family_roles(id) ON DELETE CASCADE,
+    INDEX (permission)
 );
 
 CREATE TABLE tasks (

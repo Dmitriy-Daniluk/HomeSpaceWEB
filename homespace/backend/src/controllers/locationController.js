@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { encryptSecret, decryptSecret } = require('../utils/vaultCrypto');
+const { PAGE_PERMISSIONS, getMembershipAccess, hasFamilyPermission } = require('../utils/rolePermissions');
 
 let encryptedLocationColumnsReady = false;
 
@@ -29,11 +30,16 @@ const ensureEncryptedLocationColumns = async () => {
 };
 
 const ensureFamilyMember = async (userId, familyId) => {
-  const [membership] = await pool.query(
-    'SELECT role FROM family_members WHERE user_id = ? AND family_id = ?',
-    [userId, familyId]
-  );
-  return membership.length > 0 ? membership[0] : null;
+  return getMembershipAccess(userId, familyId);
+};
+
+const ensureLocationAccess = async (userId, familyId) => {
+  const membership = await ensureFamilyMember(userId, familyId);
+  if (!membership) return { error: { status: 403, message: 'Not a member of this family' } };
+  if (!membership.permissions.includes(PAGE_PERMISSIONS.location)) {
+    return { error: { status: 403, message: 'Геолокация доступна родителю или участнику с разрешением роли.' } };
+  }
+  return { membership };
 };
 
 const decryptNumber = (value, fallback) => {
@@ -110,6 +116,12 @@ exports.getLatestLocation = async (req, res, next) => {
       if (sharedFamilies.length === 0) {
         return res.status(403).json({ error: 'Location access denied' });
       }
+      const canViewAnySharedFamily = await Promise.all(
+        sharedFamilies.map((family) => hasFamilyPermission(req.user.id, family.family_id, PAGE_PERMISSIONS.location))
+      );
+      if (!canViewAnySharedFamily.some(Boolean)) {
+        return res.status(403).json({ error: 'Геолокация доступна родителю или участнику с разрешением роли.' });
+      }
     }
 
     const [locations] = await pool.query(
@@ -145,8 +157,8 @@ exports.deleteMyLocation = async (req, res, next) => {
 exports.getGeofences = async (req, res, next) => {
   try {
     const { familyId } = req.params;
-    const membership = await ensureFamilyMember(req.user.id, familyId);
-    if (!membership) return res.status(403).json({ error: 'Not a member of this family' });
+    const access = await ensureLocationAccess(req.user.id, familyId);
+    if (access.error) return res.status(access.error.status).json({ error: access.error.message });
 
     const [geofences] = await pool.query(
       'SELECT * FROM geofences WHERE family_id = ? ORDER BY name ASC',
@@ -164,8 +176,8 @@ exports.createGeofence = async (req, res, next) => {
     const { familyId } = req.params;
     const { name, latitude, longitude } = req.body;
     const radiusMeters = req.body.radiusMeters || req.body.radius_meters || req.body.radius;
-    const membership = await ensureFamilyMember(req.user.id, familyId);
-    if (!membership) return res.status(403).json({ error: 'Not a member of this family' });
+    const access = await ensureLocationAccess(req.user.id, familyId);
+    if (access.error) return res.status(access.error.status).json({ error: access.error.message });
 
     const [result] = await pool.query(
       'INSERT INTO geofences (family_id, name, latitude, longitude, radius_meters) VALUES (?, ?, ?, ?, ?)',
@@ -189,8 +201,8 @@ exports.deleteGeofence = async (req, res, next) => {
       return res.status(404).json({ error: 'Geofence not found' });
     }
 
-    const membership = await ensureFamilyMember(req.user.id, geofences[0].family_id);
-    if (!membership) return res.status(403).json({ error: 'Not a member of this family' });
+    const access = await ensureLocationAccess(req.user.id, geofences[0].family_id);
+    if (access.error) return res.status(access.error.status).json({ error: access.error.message });
 
     const [result] = await pool.query('DELETE FROM geofences WHERE id = ?', [id]);
     if (result.affectedRows === 0) {

@@ -2,6 +2,24 @@ const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 const logger = require('./logger');
 
+const getConfiguredAdminEmails = () => {
+  const primaryEmail = process.env.ADMIN_EMAIL || 'admin@homespace.local';
+  const adminEmails = (process.env.ADMIN_EMAILS || primaryEmail)
+    .split(',')
+    .concat(primaryEmail)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+
+  return [...new Set(adminEmails)];
+};
+
+const ensureUserRoleColumn = async () => {
+  const [columns] = await pool.query('SHOW COLUMNS FROM users LIKE ?', ['role']);
+  if (columns.length === 0) {
+    await pool.query("ALTER TABLE users ADD COLUMN role ENUM('user', 'admin') NOT NULL DEFAULT 'user' AFTER avatar_url");
+  }
+};
+
 const ensureSubscriptionPaymentsTable = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS subscription_payments (
@@ -58,23 +76,62 @@ const ensureFeedbackContactColumns = async () => {
   await ensureColumn('contact_email', 'VARCHAR(255) NULL AFTER contact_name');
 };
 
+const ensureFamilyCustomRolesSupport = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS family_roles (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      family_id INT NOT NULL,
+      name VARCHAR(50) NOT NULL,
+      color VARCHAR(20) NOT NULL DEFAULT '#6366f1',
+      created_by INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY family_roles_family_name_unique (family_id, name),
+      FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+      INDEX (family_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS family_role_permissions (
+      family_role_id INT NOT NULL,
+      permission VARCHAR(80) NOT NULL,
+      PRIMARY KEY (family_role_id, permission),
+      FOREIGN KEY (family_role_id) REFERENCES family_roles(id) ON DELETE CASCADE,
+      INDEX (permission)
+    )
+  `);
+
+  const [columns] = await pool.query('SHOW COLUMNS FROM family_members LIKE ?', ['custom_role_id']);
+  if (columns.length === 0) {
+    await pool.query('ALTER TABLE family_members ADD COLUMN custom_role_id INT NULL AFTER role');
+    await pool.query('CREATE INDEX family_members_custom_role_id_idx ON family_members (custom_role_id)');
+  }
+};
+
 exports.ensureAdminUser = async () => {
+  await ensureUserRoleColumn();
   await ensureSubscriptionPaymentsTable();
   await ensureAdminAuditLogsTable();
   await ensurePersonalAttachmentsSupport();
   await ensureFeedbackContactColumns();
+  await ensureFamilyCustomRolesSupport();
+
+  const uniqueAdminEmails = getConfiguredAdminEmails();
+  for (const email of uniqueAdminEmails) {
+    await pool.query('UPDATE users SET role = ? WHERE LOWER(email) = ?', ['admin', email]);
+  }
 
   if (process.env.SEED_ADMIN_USER !== 'true') return;
 
-  const primaryEmail = process.env.ADMIN_EMAIL || 'admin@homespace.local';
-  const adminEmails = (process.env.ADMIN_EMAILS || primaryEmail)
-    .split(',')
-    .concat(primaryEmail)
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
-  const uniqueAdminEmails = [...new Set(adminEmails)];
-  const password = process.env.ADMIN_PASSWORD || 'admin12345';
+  const password = process.env.ADMIN_PASSWORD;
   const fullName = process.env.ADMIN_FULL_NAME || 'HomeSpace Admin';
+
+  if (!process.env.ADMIN_PASSWORD) {
+    throw new Error('ADMIN_PASSWORD is required when SEED_ADMIN_USER=true');
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
 
   for (const email of uniqueAdminEmails) {
@@ -85,8 +142,8 @@ exports.ensureAdminUser = async () => {
     }
 
     await pool.query(
-      'INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)',
-      [email, passwordHash, fullName]
+      'INSERT INTO users (email, password_hash, full_name, role) VALUES (?, ?, ?, ?)',
+      [email, passwordHash, fullName, 'admin']
     );
 
     logger.info(`Admin seed created: ${email}`);

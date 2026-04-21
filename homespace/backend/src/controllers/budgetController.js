@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { PAGE_PERMISSIONS, getMembershipAccess } = require('../utils/rolePermissions');
 
 const FREE_BUDGET_DAYS = 60;
 const getFamilyId = (req) => req.query.familyId || req.body.familyId || req.body.family_id || null;
@@ -89,11 +90,16 @@ const buildBudgetWhere = ({ familyId, userId, period, startDate, endDate, type }
 
 const ensureFamilyMember = async (userId, familyId) => {
   if (!familyId) return true;
-  const [membership] = await pool.query(
-    'SELECT role FROM family_members WHERE user_id = ? AND family_id = ?',
-    [userId, familyId]
-  );
-  return membership.length > 0 ? membership[0] : null;
+  return getMembershipAccess(userId, familyId);
+};
+
+const ensureBudgetAccess = async (userId, familyId) => {
+  const membership = await ensureFamilyMember(userId, familyId);
+  if (!membership) return { error: { status: 403, message: 'Not a member of this family' } };
+  if (membership !== true && !membership.permissions.includes(PAGE_PERMISSIONS.budget)) {
+    return { error: { status: 403, message: 'Бюджет доступен родителю или участнику с разрешением роли.' } };
+  }
+  return { membership };
 };
 
 exports.getBudget = async (req, res, next) => {
@@ -101,8 +107,8 @@ exports.getBudget = async (req, res, next) => {
     const { familyId, period, startDate, endDate, type } = req.query;
 
     if (familyId) {
-      const membership = await ensureFamilyMember(req.user.id, familyId);
-      if (!membership) return res.status(403).json({ error: 'Not a member of this family' });
+      const access = await ensureBudgetAccess(req.user.id, familyId);
+      if (access.error) return res.status(access.error.status).json({ error: access.error.message });
     }
 
     const access = await resolveBudgetAccess({ userId: req.user.id, period, startDate, endDate });
@@ -142,8 +148,8 @@ exports.addTransaction = async (req, res, next) => {
     const transactionDate = getTransactionDate(req.body);
 
     if (familyId) {
-      const membership = await ensureFamilyMember(req.user.id, familyId);
-      if (!membership) return res.status(403).json({ error: 'Not a member of this family' });
+      const access = await ensureBudgetAccess(req.user.id, familyId);
+      if (access.error) return res.status(access.error.status).json({ error: access.error.message });
     }
 
     const [result] = await pool.query(
@@ -169,6 +175,10 @@ exports.deleteTransaction = async (req, res, next) => {
     }
 
     const tx = existing[0];
+    if (tx.family_id) {
+      const access = await ensureBudgetAccess(req.user.id, tx.family_id);
+      if (access.error) return res.status(access.error.status).json({ error: access.error.message });
+    }
     if (tx.user_id !== req.user.id) {
       const membership = await ensureFamilyMember(req.user.id, tx.family_id);
       if (!membership || membership.role !== 'parent') {
@@ -199,6 +209,10 @@ exports.updateTransaction = async (req, res, next) => {
     }
 
     const tx = existing[0];
+    if (tx.family_id) {
+      const access = await ensureBudgetAccess(req.user.id, tx.family_id);
+      if (access.error) return res.status(access.error.status).json({ error: access.error.message });
+    }
     if (tx.user_id !== req.user.id) {
       const membership = await ensureFamilyMember(req.user.id, tx.family_id);
       if (!membership || membership.role !== 'parent') {
@@ -224,8 +238,8 @@ exports.getBudgetStats = async (req, res, next) => {
     const { familyId, period, startDate, endDate, type } = req.query;
 
     if (familyId) {
-      const membership = await ensureFamilyMember(req.user.id, familyId);
-      if (!membership) return res.status(403).json({ error: 'Not a member of this family' });
+      const access = await ensureBudgetAccess(req.user.id, familyId);
+      if (access.error) return res.status(access.error.status).json({ error: access.error.message });
     }
 
     const access = await resolveBudgetAccess({ userId: req.user.id, period, startDate, endDate });
@@ -278,8 +292,8 @@ exports.getSubscriptionData = async (req, res, next) => {
     }
 
     if (familyId) {
-      const membership = await ensureFamilyMember(req.user.id, familyId);
-      if (!membership) return res.status(403).json({ error: 'Not a member of this family' });
+      const access = await ensureBudgetAccess(req.user.id, familyId);
+      if (access.error) return res.status(access.error.status).json({ error: access.error.message });
 
       const [data] = await pool.query(
         `SELECT 

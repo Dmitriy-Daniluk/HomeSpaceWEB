@@ -1,15 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
-const { auth } = require('../middleware/auth');
-
-const isAdmin = (req, res, next) => {
-  const adminEmails = (process.env.ADMIN_EMAILS || 'admin@homespace.ru,admin@example.com').split(',').map(e => e.trim().toLowerCase());
-  if (!adminEmails.includes(req.user.email.toLowerCase())) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-};
+const { auth, isAdmin } = require('../middleware/auth');
 
 router.get('/stats', auth, isAdmin, adminController.getStats);
 router.get('/users', auth, isAdmin, adminController.getRecentUsers);

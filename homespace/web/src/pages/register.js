@@ -8,8 +8,6 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import PrivacyPolicyModal from '../components/PrivacyPolicyModal';
 
-const ADMIN_EMAILS = ['admin@homespace.local', 'admin@homespace.ru', 'admin@example.com'];
-
 export default function RegisterPage() {
   const router = useRouter();
   const { register } = useAuth();
@@ -35,7 +33,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const userData = await register(form.fullName, form.email, form.password, form.confirmPassword);
-      window.location.href = ADMIN_EMAILS.includes(userData.email?.toLowerCase()) ? '/admin' : '/dashboard';
+      router.replace(userData.isAdmin ? '/admin' : '/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка регистрации');
     } finally {

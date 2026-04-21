@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import {
-  Check, Copy, Crown, FileSpreadsheet, Infinity, LockKeyhole, QrCode,
+  Check, CheckCircle2, Copy, Crown, FileSpreadsheet, Infinity, LockKeyhole, QrCode,
   ShieldCheck, Smartphone, Sparkles, TrendingUp, Wallet
 } from 'lucide-react';
 import api from '../utils/api';
@@ -46,6 +46,8 @@ export default function SubscriptionPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [payment, setPayment] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
 
   const plan = plans.find((item) => item.id === selectedPlan) || plans[0];
   const sbpCode = useMemo(
@@ -56,16 +58,18 @@ export default function SubscriptionPage() {
   const copyCode = async () => {
     try {
       await navigator.clipboard.writeText(sbpCode);
-      window.alert('Код СБП скопирован.');
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
     } catch (err) {
       console.error(err);
-      window.alert(`Код оплаты: ${sbpCode}`);
+      setPaymentError(`Не удалось скопировать код. Код оплаты: ${sbpCode}`);
     }
   };
 
   const confirmSbpPayment = async () => {
     setLoading(true);
     setSuccess(false);
+    setPaymentError('');
     try {
       const res = await api.post('/users/subscription', {
         plan: selectedPlan,
@@ -78,7 +82,7 @@ export default function SubscriptionPage() {
       setSuccess(true);
     } catch (err) {
       console.error(err);
-      window.alert('Не удалось активировать подписку. Попробуйте ещё раз.');
+      setPaymentError(err.response?.data?.message || 'Не удалось активировать подписку. Попробуйте ещё раз.');
     } finally {
       setLoading(false);
     }
@@ -228,9 +232,12 @@ export default function SubscriptionPage() {
                     className="rounded-xl bg-white/10 p-2 hover:bg-white/20"
                     aria-label="Скопировать код СБП"
                   >
-                    <Copy className="w-4 h-4" />
+                    {copied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
+                {copied && (
+                  <p className="mt-2 text-xs text-emerald-200">Код скопирован</p>
+                )}
               </div>
 
               <Button
@@ -239,18 +246,34 @@ export default function SubscriptionPage() {
                 className="mt-5 w-full bg-white text-gray-950 hover:bg-cyan-50"
                 icon={<ShieldCheck className="w-4 h-4" />}
               >
-                Оплата выполнена, активировать
+                {success ? 'Продлить ещё раз' : 'Оплата выполнена, активировать'}
               </Button>
-            </div>
 
-            {success && (
-              <div className="mt-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4">
-                <p className="font-semibold text-emerald-800 dark:text-emerald-200">Подписка активирована</p>
-                <p className="text-sm text-emerald-700 dark:text-emerald-300">
-                  Платеж {payment?.providerPaymentId || 'SBP mock'} записан в продажи.
-                </p>
-              </div>
-            )}
+              {paymentError && (
+                <div className="mt-4 rounded-2xl bg-red-500/15 border border-red-300/30 p-4 text-sm text-red-100">
+                  {paymentError}
+                </div>
+              )}
+
+              {success && (
+                <div className="mt-4 rounded-2xl bg-emerald-400/15 border border-emerald-300/30 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-full bg-emerald-300/20 p-1">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-200" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-emerald-100">Подписка активирована</p>
+                      <p className="mt-1 text-sm text-emerald-50/80">
+                        Plus доступен до {user?.subscription_until ? new Date(user.subscription_until).toLocaleDateString('ru-RU') : 'обновления профиля'}.
+                      </p>
+                      <p className="mt-2 text-xs text-emerald-50/60">
+                        Платеж {payment?.providerPaymentId || 'SBP mock'} записан в продажи.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="mt-4 flex flex-col sm:flex-row gap-3">
               <Link href="/budget" className="flex-1">

@@ -1,5 +1,6 @@
 const pool = require('../config/db');
-const { encryptSecret, decryptSecret } = require('../utils/vaultCrypto');
+const { encryptSecret, tryDecryptSecret } = require('../utils/vaultCrypto');
+const { PAGE_PERMISSIONS, getMembershipAccess } = require('../utils/rolePermissions');
 
 const FREE_PASSWORD_LIMIT = 5;
 
@@ -16,20 +17,32 @@ const normalizePasswordPayload = (body = {}) => ({
   visibilityLevel: body.visibilityLevel || body.visibility_level,
 });
 
-const mapPassword = (entry) => ({
-  ...entry,
-  service: entry.service_name,
-  password: decryptSecret(entry.encrypted_password),
-  encrypted_password: decryptSecret(entry.encrypted_password),
-  fullName: entry.owner_name,
-});
+const mapPassword = (entry) => {
+  const secret = tryDecryptSecret(entry.encrypted_password);
+
+  return {
+    ...entry,
+    service: entry.service_name,
+    password: secret.ok ? secret.value : null,
+    encrypted_password: secret.ok ? secret.value : null,
+    secret_status: secret.ok ? 'ok' : 'unreadable',
+    can_decrypt: secret.ok,
+    decrypt_error: secret.ok ? null : 'Секрет нельзя расшифровать текущим ключом. Замените пароль в записи.',
+    fullName: entry.owner_name,
+  };
+};
 
 const ensureFamilyMember = async (userId, familyId) => {
-  const [membership] = await pool.query(
-    'SELECT role FROM family_members WHERE user_id = ? AND family_id = ?',
-    [userId, familyId]
-  );
-  return membership.length > 0 ? membership[0] : null;
+  return getMembershipAccess(userId, familyId);
+};
+
+const ensurePasswordAccess = async (userId, familyId) => {
+  const membership = await ensureFamilyMember(userId, familyId);
+  if (!membership) return { error: { status: 403, message: 'Not a member of this family' } };
+  if (!membership.permissions.includes(PAGE_PERMISSIONS.passwords)) {
+    return { error: { status: 403, message: 'Пароли доступны родителю или участнику с разрешением роли.' } };
+  }
+  return { membership };
 };
 
 exports.getPasswords = async (req, res, next) => {
@@ -40,16 +53,10 @@ exports.getPasswords = async (req, res, next) => {
       return res.status(400).json({ error: 'familyId query param required' });
     }
 
-    const [memberInfo] = await pool.query(
-      'SELECT role FROM family_members WHERE user_id = ? AND family_id = ?',
-      [req.user.id, familyId]
-    );
+    const access = await ensurePasswordAccess(req.user.id, familyId);
+    if (access.error) return res.status(access.error.status).json({ error: access.error.message });
 
-    if (memberInfo.length === 0) {
-      return res.status(403).json({ error: 'Not a member of this family' });
-    }
-
-    const role = memberInfo[0].role;
+    const role = access.membership.role;
     let visibilityFilter = '';
     const params = [familyId];
 
@@ -90,6 +97,9 @@ exports.savePassword = async (req, res, next) => {
     const membership = await ensureFamilyMember(req.user.id, familyId);
     if (!membership) {
       return res.status(403).json({ error: 'Not a member of this family' });
+    }
+    if (!membership.permissions.includes(PAGE_PERMISSIONS.passwords)) {
+      return res.status(403).json({ error: 'Пароли доступны родителю или участнику с разрешением роли.' });
     }
 
     const [users] = await pool.query(
@@ -144,6 +154,9 @@ exports.getPassword = async (req, res, next) => {
     if (!membership) {
       return res.status(403).json({ error: 'Not a member of this family' });
     }
+    if (!membership.permissions.includes(PAGE_PERMISSIONS.passwords)) {
+      return res.status(403).json({ error: 'Пароли доступны родителю или участнику с разрешением роли.' });
+    }
 
     if (entry.visibility_level === 'private' && entry.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Access denied' });
@@ -172,18 +185,52 @@ exports.updatePassword = async (req, res, next) => {
     if (existing[0].user_id !== req.user.id) {
       return res.status(403).json({ error: 'Only the owner can update' });
     }
+    const updateAccess = await ensurePasswordAccess(req.user.id, existing[0].family_id);
+    if (updateAccess.error) {
+      return res.status(updateAccess.error.status).json({ error: updateAccess.error.message });
+    }
 
-    await pool.query(
-      `UPDATE password_vault SET 
-        service_name = COALESCE(?, service_name),
-        login = COALESCE(?, login),
-        encrypted_password = COALESCE(?, encrypted_password),
-        url = COALESCE(?, url),
-        notes = COALESCE(?, notes),
-        visibility_level = COALESCE(?, visibility_level)
-       WHERE id = ?`,
-      [serviceName, login, encryptedPassword ? encryptSecret(encryptedPassword) : encryptedPassword, url, notes, visibilityLevel, id]
-    );
+    const updates = [];
+    const params = [];
+    const hasOwn = (field) => Object.prototype.hasOwnProperty.call(req.body, field);
+
+    if (hasOwn('service') || hasOwn('serviceName') || hasOwn('service_name')) {
+      if (!serviceName || !String(serviceName).trim()) {
+        return res.status(400).json({ error: 'Service name required' });
+      }
+      updates.push('service_name = ?');
+      params.push(String(serviceName).trim());
+    }
+    if (hasOwn('login')) {
+      updates.push('login = ?');
+      params.push(login || null);
+    }
+    if (hasOwn('password') || hasOwn('encryptedPassword') || hasOwn('encrypted_password')) {
+      if (encryptedPassword && String(encryptedPassword).trim()) {
+        updates.push('encrypted_password = ?');
+        params.push(encryptSecret(encryptedPassword));
+      }
+    }
+    if (hasOwn('url')) {
+      updates.push('url = ?');
+      params.push(url || null);
+    }
+    if (hasOwn('notes')) {
+      updates.push('notes = ?');
+      params.push(notes || null);
+    }
+    if (hasOwn('visibilityLevel') || hasOwn('visibility_level')) {
+      if (!['private', 'parents', 'family'].includes(visibilityLevel)) {
+        return res.status(400).json({ error: 'Invalid visibility' });
+      }
+      updates.push('visibility_level = ?');
+      params.push(visibilityLevel);
+    }
+
+    if (updates.length > 0) {
+      params.push(id);
+      await pool.query(`UPDATE password_vault SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
 
     const [passwords] = await pool.query('SELECT * FROM password_vault WHERE id = ?', [id]);
 
@@ -204,6 +251,10 @@ exports.deletePassword = async (req, res, next) => {
 
     if (existing[0].user_id !== req.user.id) {
       return res.status(403).json({ error: 'Only the owner can delete' });
+    }
+    const deleteAccess = await ensurePasswordAccess(req.user.id, existing[0].family_id);
+    if (deleteAccess.error) {
+      return res.status(deleteAccess.error.status).json({ error: deleteAccess.error.message });
     }
 
     await pool.query('DELETE FROM password_vault WHERE id = ?', [id]);

@@ -1,9 +1,11 @@
 const pool = require('../config/db');
 const path = require('path');
 const fs = require('fs');
+const { PAGE_PERMISSIONS, getMembershipAccess } = require('../utils/rolePermissions');
 
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads'));
 const FREE_FILE_LIMIT = 20;
+const allowedFileTypes = new Set(['receipt', 'document', 'image', 'other']);
 
 const hasActiveSubscription = (user) => Boolean(
   user?.has_subscription && (!user.subscription_until || new Date(user.subscription_until) > new Date())
@@ -11,11 +13,16 @@ const hasActiveSubscription = (user) => Boolean(
 
 const ensureFamilyMember = async (userId, familyId) => {
   if (!familyId) return null;
-  const [membership] = await pool.query(
-    'SELECT role FROM family_members WHERE user_id = ? AND family_id = ?',
-    [userId, familyId]
-  );
-  return membership.length > 0 ? membership[0] : null;
+  return getMembershipAccess(userId, familyId);
+};
+
+const ensureFileAccess = async (userId, familyId) => {
+  const membership = await ensureFamilyMember(userId, familyId);
+  if (!membership) return { error: { status: 403, message: 'Not a member of this family' } };
+  if (!membership.permissions.includes(PAGE_PERMISSIONS.files)) {
+    return { error: { status: 403, message: 'Файлы доступны родителю или участнику с разрешением роли.' } };
+  }
+  return { membership };
 };
 
 const ensureTaskAccess = async (userId, taskId) => {
@@ -26,10 +33,8 @@ const ensureTaskAccess = async (userId, taskId) => {
 
   const task = tasks[0];
   if (task.family_id) {
-    const membership = await ensureFamilyMember(userId, task.family_id);
-    if (!membership) {
-      return { error: { status: 403, message: 'Not a member of this task family' } };
-    }
+    const access = await ensureFileAccess(userId, task.family_id);
+    if (access.error) return { error: access.error };
     return { task, familyId: task.family_id };
   }
 
@@ -49,10 +54,8 @@ const ensureTransactionAccess = async (userId, transactionId) => {
 
   const transaction = transactions[0];
   if (transaction.family_id) {
-    const membership = await ensureFamilyMember(userId, transaction.family_id);
-    if (!membership) {
-      return { error: { status: 403, message: 'Not a member of this transaction family' } };
-    }
+    const access = await ensureFileAccess(userId, transaction.family_id);
+    if (access.error) return { error: access.error };
     return { transaction, familyId: transaction.family_id };
   }
 
@@ -65,8 +68,8 @@ const ensureTransactionAccess = async (userId, transactionId) => {
 
 const ensureAttachmentAccess = async (userId, attachment) => {
   if (attachment.family_id) {
-    const membership = await ensureFamilyMember(userId, attachment.family_id);
-    return membership ? null : { status: 403, message: 'Not a member of this family' };
+    const access = await ensureFileAccess(userId, attachment.family_id);
+    return access.error ? access.error : null;
   }
 
   if (Number(attachment.uploader_id) === Number(userId)) return null;
@@ -95,6 +98,11 @@ exports.uploadFile = async (req, res, next) => {
     const relatedTransactionId = req.body.relatedTransactionId || req.body.related_transaction_id;
     const fileType = req.body.fileType || req.body.file_type || 'other';
 
+    if (!allowedFileTypes.has(fileType)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'Invalid file type' });
+    }
+
     if (relatedTaskId) {
       const access = await ensureTaskAccess(req.user.id, relatedTaskId);
       if (access.error) {
@@ -122,10 +130,10 @@ exports.uploadFile = async (req, res, next) => {
     }
 
     if (familyId) {
-      const membership = await ensureFamilyMember(req.user.id, familyId);
-      if (!membership) {
+      const access = await ensureFileAccess(req.user.id, familyId);
+      if (access.error) {
         fs.unlink(req.file.path, () => {});
-        return res.status(403).json({ error: 'Not a member of this family' });
+        return res.status(access.error.status).json({ error: access.error.message });
       }
     }
 
@@ -210,16 +218,22 @@ exports.getFiles = async (req, res, next) => {
       query += ' AND a.related_transaction_id = ?';
       params.push(transactionId);
     } else if (familyId) {
-      const membership = await ensureFamilyMember(req.user.id, familyId);
-      if (!membership) return res.status(403).json({ error: 'Not a member of this family' });
+      const access = await ensureFileAccess(req.user.id, familyId);
+      if (access.error) return res.status(access.error.status).json({ error: access.error.message });
       query += ' AND a.family_id = ?';
       params.push(familyId);
     } else {
       query += ` AND (
-        a.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?)
+        a.family_id IN (
+          SELECT fm.family_id
+          FROM family_members fm
+          LEFT JOIN family_role_permissions frp
+            ON frp.family_role_id = fm.custom_role_id AND frp.permission = ?
+          WHERE fm.user_id = ? AND (fm.role = 'parent' OR frp.permission IS NOT NULL)
+        )
         OR (a.family_id IS NULL AND a.uploader_id = ?)
       )`;
-      params.push(req.user.id, req.user.id);
+      params.push(PAGE_PERMISSIONS.files, req.user.id, req.user.id);
     }
     if (fileType) {
       query += ' AND a.file_type = ?';

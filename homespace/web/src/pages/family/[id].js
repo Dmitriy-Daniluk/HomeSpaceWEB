@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
-import { Users, Mail, Copy, UserPlus, Settings, Trash2, Edit2, CheckSquare, Wallet, ArrowLeft, Target, Share2, FileText, Trophy } from 'lucide-react';
+import { Users, Mail, Copy, UserPlus, Settings, Trash2, Edit2, CheckSquare, Wallet, ArrowLeft, Target, Share2, FileText, Trophy, Crown, Palette, Plus } from 'lucide-react';
 import api from '../../utils/api';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -11,6 +11,14 @@ import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
 import Loading from '../../components/ui/Loading';
+
+const permissionOptions = [
+  { value: 'budget.view', label: 'Бюджет' },
+  { value: 'analytics.view', label: 'Аналитика' },
+  { value: 'files.view', label: 'Файлы' },
+  { value: 'passwords.view', label: 'Пароли' },
+  { value: 'location.view', label: 'Геолокация' },
+];
 
 export default function FamilyPage() {
   const router = useRouter();
@@ -28,6 +36,8 @@ export default function FamilyPage() {
   const [editGoal, setEditGoal] = useState('');
   const [saving, setSaving] = useState(false);
   const [roleUpdating, setRoleUpdating] = useState({});
+  const [customRoleForm, setCustomRoleForm] = useState({ name: '', color: '#6366f1', permissions: [] });
+  const [customRoleSaving, setCustomRoleSaving] = useState(false);
 
   useEffect(() => {
     if (id) fetchFamily();
@@ -109,16 +119,70 @@ export default function FamilyPage() {
     }
   };
 
-  const updateMemberRole = async (userId, role) => {
+  const updateMemberRole = async (userId, role, customRoleId) => {
     setRoleUpdating((prev) => ({ ...prev, [userId]: true }));
     try {
-      await api.put(`/families/${id}/member/${userId}/role`, { role });
+      await api.put(`/families/${id}/member/${userId}/role`, {
+        role,
+        customRoleId: customRoleId || null,
+      });
       fetchFamily();
     } catch (err) {
       console.error(err);
       window.alert(err.response?.data?.message || err.response?.data?.error || 'Не удалось изменить роль участника.');
     } finally {
       setRoleUpdating((prev) => ({ ...prev, [userId]: false }));
+    }
+  };
+
+  const createCustomRole = async (e) => {
+    e.preventDefault();
+    setCustomRoleSaving(true);
+    try {
+      await api.post(`/families/${id}/roles`, customRoleForm);
+      setCustomRoleForm({ name: '', color: '#6366f1', permissions: [] });
+      fetchFamily();
+    } catch (err) {
+      console.error(err);
+      window.alert(err.response?.data?.message || err.response?.data?.error || 'Не удалось создать роль.');
+    } finally {
+      setCustomRoleSaving(false);
+    }
+  };
+
+  const deleteCustomRole = async (roleId) => {
+    if (!window.confirm('Удалить кастомную роль? У участников она будет очищена.')) return;
+    try {
+      await api.delete(`/families/${id}/roles/${roleId}`);
+      fetchFamily();
+    } catch (err) {
+      console.error(err);
+      window.alert(err.response?.data?.message || err.response?.data?.error || 'Не удалось удалить роль.');
+    }
+  };
+
+  const toggleNewRolePermission = (permission) => {
+    setCustomRoleForm((prev) => ({
+      ...prev,
+      permissions: prev.permissions.includes(permission)
+        ? prev.permissions.filter((item) => item !== permission)
+        : [...prev.permissions, permission],
+    }));
+  };
+
+  const toggleRolePermission = async (role, permission) => {
+    if (!canManageCustomRoles) return;
+    const current = role.permissions || [];
+    const permissions = current.includes(permission)
+      ? current.filter((item) => item !== permission)
+      : [...current, permission];
+
+    try {
+      await api.put(`/families/${id}/roles/${role.id}`, { permissions });
+      fetchFamily();
+    } catch (err) {
+      console.error(err);
+      window.alert(err.response?.data?.message || err.response?.data?.error || 'Не удалось обновить доступы роли.');
     }
   };
 
@@ -152,6 +216,13 @@ export default function FamilyPage() {
   const metrics = overview?.metrics || {};
   const storageCount = (metrics.storage || []).reduce((sum, item) => sum + Number(item.count || 0), 0);
   const topPerformer = metrics.productivity?.[0];
+  const isParent = family.role === 'parent';
+  const customRoles = family.customRoles || family.custom_roles || [];
+  const canManageCustomRoles = isParent && Boolean(family.currentUserHasSubscription || family.current_user_has_subscription);
+  const currentCustomRole = customRoles.find((role) => Number(role.id) === Number(family.custom_role_id));
+  const currentPermissions = new Set(isParent ? permissionOptions.map((item) => item.value) : (currentCustomRole?.permissions || []));
+  const canOpenBudget = currentPermissions.has('budget.view');
+  const canOpenFiles = currentPermissions.has('files.view');
 
   return (
     <>
@@ -176,14 +247,16 @@ export default function FamilyPage() {
                 </div>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)} icon={<Settings className="w-4 h-4" />}>
-                Настройки
-              </Button>
-              <Button variant="primary" size="sm" onClick={() => setShowInviteModal(true)} icon={<UserPlus className="w-4 h-4" />}>
-                Пригласить
-              </Button>
-            </div>
+            {isParent && (
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)} icon={<Settings className="w-4 h-4" />}>
+                  Настройки
+                </Button>
+                <Button variant="primary" size="sm" onClick={() => setShowInviteModal(true)} icon={<UserPlus className="w-4 h-4" />}>
+                  Пригласить
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Savings goal */}
@@ -209,7 +282,7 @@ export default function FamilyPage() {
         </Card>
 
         {/* Quick Links */}
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className={`grid gap-4 ${isParent ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
           <Link href={`/dashboard?familyId=${id}`} className="card hover:shadow-lg transition-all p-4 flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center group-hover:scale-110 transition-transform">
               <CheckSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -219,29 +292,33 @@ export default function FamilyPage() {
               <p className="text-xs text-gray-500 dark:text-gray-400">{pendingTasks} ожидающих</p>
             </div>
           </Link>
-          <Link href={`/budget?familyId=${id}`} className="card hover:shadow-lg transition-all p-4 flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Wallet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+          {canOpenBudget && (
+            <Link href={`/budget?familyId=${id}`} className="card hover:shadow-lg transition-all p-4 flex items-center gap-3 group">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Wallet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="font-medium text-gray-900 dark:text-white text-sm">Бюджет</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Финансы семьи</p>
+              </div>
+            </Link>
+          )}
+          {isParent && (
+            <div className="card p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                <Share2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="font-medium text-gray-900 dark:text-white text-sm">Код приглашения</p>
+                <button
+                  onClick={copyInviteCode}
+                  className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1 hover:underline"
+                >
+                  <Copy className="w-3 h-3" /> {family.invite_code || 'Нет кода'}
+                </button>
+              </div>
             </div>
-            <div>
-              <p className="font-medium text-gray-900 dark:text-white text-sm">Бюджет</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Финансы семьи</p>
-            </div>
-          </Link>
-          <div className="card p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-              <Share2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-            </div>
-            <div>
-              <p className="font-medium text-gray-900 dark:text-white text-sm">Код приглашения</p>
-              <button
-                onClick={copyInviteCode}
-                className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1 hover:underline"
-              >
-                <Copy className="w-3 h-3" /> {family.invite_code || 'Нет кода'}
-              </button>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Overview Metrics */}
@@ -255,26 +332,30 @@ export default function FamilyPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Задач на сегодня</p>
             </div>
           </Card>
-          <Card className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-              <Wallet className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {Number(metrics.budget_month?.balance || 0).toLocaleString('ru-RU')} ₽
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Баланс месяца</p>
-            </div>
-          </Card>
-          <Card className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-              <FileText className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{storageCount}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Файлов в семье</p>
-            </div>
-          </Card>
+          {canOpenBudget && (
+            <Card className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                <Wallet className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {Number(metrics.budget_month?.balance || 0).toLocaleString('ru-RU')} ₽
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Баланс месяца</p>
+              </div>
+            </Card>
+          )}
+          {canOpenFiles && (
+            <Card className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                <FileText className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{storageCount}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Файлов в семье</p>
+              </div>
+            </Card>
+          )}
           <Card className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
               <Trophy className="w-6 h-6 text-amber-600 dark:text-amber-400" />
@@ -287,6 +368,99 @@ export default function FamilyPage() {
             </div>
           </Card>
         </div>
+
+        {/* Custom Roles */}
+        <Card>
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                <Palette className="w-5 h-5" /> Кастомные роли
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Базовые права остаются `Родитель` и `Ребенок`, а кастомная роль помогает понятно подписать участника семьи.
+              </p>
+              {!canManageCustomRoles && isParent && (
+                <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                  <Crown className="w-4 h-4" />
+                  Управление кастомными ролями доступно с активной подпиской.
+                </div>
+              )}
+            </div>
+            {canManageCustomRoles && (
+              <form onSubmit={createCustomRole} className="w-full lg:max-w-xl space-y-3">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="color"
+                    value={customRoleForm.color}
+                    onChange={(e) => setCustomRoleForm({ ...customRoleForm, color: e.target.value })}
+                    className="h-11 w-full sm:w-14 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 p-1"
+                    aria-label="Цвет роли"
+                  />
+                  <Input
+                    value={customRoleForm.name}
+                    onChange={(e) => setCustomRoleForm({ ...customRoleForm, name: e.target.value })}
+                    placeholder="Например: Няня"
+                    required
+                  />
+                  <Button type="submit" variant="primary" loading={customRoleSaving} icon={<Plus className="w-4 h-4" />}>
+                    Добавить
+                  </Button>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {permissionOptions.map((permission) => (
+                    <label key={permission.value} className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={customRoleForm.permissions.includes(permission.value)}
+                        onChange={() => toggleNewRolePermission(permission.value)}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      {permission.label}
+                    </label>
+                  ))}
+                </div>
+              </form>
+            )}
+          </div>
+          <div className="mt-4 grid gap-3">
+            {customRoles.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Кастомных ролей пока нет.</p>
+            ) : (
+              customRoles.map((role) => (
+                <div
+                  key={role.id}
+                  className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
+                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: role.color || '#6366f1' }} />
+                      {role.name}
+                    </div>
+                    {canManageCustomRoles && (
+                      <button type="button" onClick={() => deleteCustomRole(role.id)} className="text-red-500 hover:text-red-600">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {permissionOptions.map((permission) => (
+                      <label key={permission.value} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={(role.permissions || []).includes(permission.value)}
+                          onChange={() => toggleRolePermission(role, permission.value)}
+                          disabled={!canManageCustomRoles}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                        />
+                        {permission.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
 
         {/* Members */}
         <Card>
@@ -309,22 +483,41 @@ export default function FamilyPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {family.role === 'parent' ? (
-                      <select
-                        value={member.role}
-                        onChange={(e) => updateMemberRole(member.id, e.target.value)}
-                        disabled={roleUpdating[member.id]}
-                        className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="parent">Родитель</option>
-                        <option value="child">Ребёнок</option>
-                      </select>
+                    {isParent ? (
+                      <>
+                        <select
+                          value={member.role}
+                          onChange={(e) => updateMemberRole(member.id, e.target.value, member.custom_role_id)}
+                          disabled={roleUpdating[member.id]}
+                          className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="parent">Родитель</option>
+                          <option value="child">Ребёнок</option>
+                        </select>
+                        <select
+                          value={member.custom_role_id || ''}
+                          onChange={(e) => updateMemberRole(member.id, member.role, e.target.value || null)}
+                          disabled={!canManageCustomRoles || roleUpdating[member.id]}
+                          className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                          title={canManageCustomRoles ? 'Кастомная роль' : 'Доступно с подпиской'}
+                        >
+                          <option value="">Без роли</option>
+                          {customRoles.map((role) => (
+                            <option key={role.id} value={role.id}>{role.name}</option>
+                          ))}
+                        </select>
+                      </>
                     ) : (
-                      <Badge variant={member.role === 'parent' ? 'warning' : 'default'} size="sm">
-                        {member.role === 'parent' ? 'Родитель' : 'Участник'}
-                      </Badge>
+                      <>
+                        <Badge variant={member.role === 'parent' ? 'warning' : 'default'} size="sm">
+                          {member.role === 'parent' ? 'Родитель' : 'Участник'}
+                        </Badge>
+                        {member.custom_role_name && (
+                          <Badge variant="info" size="sm">{member.custom_role_name}</Badge>
+                        )}
+                      </>
                     )}
-                    {family.role === 'parent' && member.id !== family.current_user_id && (
+                    {isParent && member.id !== family.current_user_id && (
                       <button
                         onClick={() => removeMember(member.id)}
                         className="opacity-0 group-hover:opacity-100 p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
@@ -340,7 +533,7 @@ export default function FamilyPage() {
         </Card>
 
         {/* Invite Modal */}
-        <Modal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)} title="Пригласить участника">
+        <Modal isOpen={isParent && showInviteModal} onClose={() => setShowInviteModal(false)} title="Пригласить участника">
           <div className="space-y-6">
             <form onSubmit={inviteMember} className="space-y-4">
               <h4 className="font-medium text-gray-900 dark:text-white">Пригласить по email</h4>
@@ -367,7 +560,7 @@ export default function FamilyPage() {
               </Button>
             </form>
 
-            {family.role === 'parent' && (
+            {isParent && (
               <div className="border-t border-gray-100 dark:border-gray-700 pt-6">
                 <form onSubmit={createChildAccount} className="space-y-4">
                   <h4 className="font-medium text-gray-900 dark:text-white">Создать аккаунт ребенка</h4>
@@ -421,7 +614,7 @@ export default function FamilyPage() {
         </Modal>
 
         {/* Edit Settings Modal */}
-        <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Настройки семьи">
+        <Modal isOpen={isParent && showEditModal} onClose={() => setShowEditModal(false)} title="Настройки семьи">
           <div className="space-y-4">
             <Input
               label="Название"

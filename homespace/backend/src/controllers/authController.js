@@ -4,6 +4,13 @@ const crypto = require('crypto');
 const pool = require('../config/db');
 const logger = require('../utils/logger');
 const { sendPasswordResetEmail } = require('../utils/mailer');
+const { serializeAuthUser } = require('../utils/authUser');
+
+const signToken = (userId) => jwt.sign(
+  { id: userId },
+  process.env.JWT_SECRET || 'homespace-secret',
+  { expiresIn: process.env.JWT_EXPIRE || '7d' }
+);
 
 exports.register = async (req, res, next) => {
   try {
@@ -21,11 +28,19 @@ exports.register = async (req, res, next) => {
       [email, passwordHash, fullName]
     );
 
-    const token = jwt.sign({ id: result.insertId, email }, process.env.JWT_SECRET || 'homespace-secret', { expiresIn: '7d' });
+    const token = signToken(result.insertId);
 
     res.status(201).json({
       message: 'User registered successfully',
-      data: { token, user: { id: result.insertId, email, fullName, full_name: fullName } },
+      data: {
+        token,
+        user: serializeAuthUser({
+          id: result.insertId,
+          email,
+          full_name: fullName,
+          role: 'user',
+        }),
+      },
     });
   } catch (error) {
     next(error);
@@ -36,7 +51,12 @@ exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    const [users] = await pool.query('SELECT id, email, password_hash, full_name, avatar_url FROM users WHERE email = ?', [email]);
+    const [users] = await pool.query(
+      `SELECT id, email, password_hash, full_name, birth_date, phone, avatar_url, role,
+              has_subscription, subscription_until, created_at
+       FROM users WHERE email = ?`,
+      [email]
+    );
     if (users.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -47,20 +67,13 @@ exports.login = async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'homespace-secret', { expiresIn: '7d' });
+    const token = signToken(user.id);
 
     res.json({
       message: 'Login successful',
       data: {
         token,
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.full_name,
-          full_name: user.full_name,
-          avatarUrl: user.avatar_url,
-          avatar_url: user.avatar_url,
-        },
+        user: serializeAuthUser(user),
       },
     });
   } catch (error) {
@@ -152,6 +165,21 @@ exports.changePassword = async (req, res, next) => {
     await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, req.user.id]);
 
     res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.logout = async (req, res, next) => {
+  try {
+    logger.info('User logout', {
+      userId: req.user.id,
+      email: req.user.email,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    res.json({ message: 'Logout logged' });
   } catch (error) {
     next(error);
   }

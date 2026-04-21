@@ -112,6 +112,7 @@ export default function ProfilePage() {
   const totalTasks = Number(personalTasks.total_tasks || 0) + Number(familyTasks.total_tasks || 0);
   const completedTasks = Number(personalTasks.completed_tasks || 0) + Number(familyTasks.completed_tasks || 0);
   const taskCompletionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const isChildOnly = Boolean(profile?.isChildOnly || profile?.is_child_only || user?.isChildOnly || user?.is_child_only);
 
   return (
     <>
@@ -181,11 +182,17 @@ export default function ProfilePage() {
                 ) : (
                   <div>
                     <Badge variant="warning">Нет подписки</Badge>
-                    <Link href="/subscription">
-                      <Button variant="secondary" size="sm" className="mt-3 w-full border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200" icon={<Crown className="w-4 h-4" />}>
-                        Купить подписку
-                      </Button>
-                    </Link>
+                    {isChildOnly ? (
+                      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Подписку оформляет родительский аккаунт.
+                      </p>
+                    ) : (
+                      <Link href="/subscription">
+                        <Button variant="secondary" size="sm" className="mt-3 w-full border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200" icon={<Crown className="w-4 h-4" />}>
+                          Купить подписку
+                        </Button>
+                      </Link>
+                    )}
                   </div>
                 )}
               </div>

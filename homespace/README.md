@@ -125,13 +125,35 @@
 git clone <repository-url>
 cd homespace
 
-# Запуск всех сервисов
-docker-compose up -d
+# Запуск всех сервисов без host-bind mounts
+docker compose up -d --build
 
 # Сервисы будут доступны:
 # Веб-приложение: http://localhost:3000
 # Бэкенд API:    http://localhost:5001
 # MySQL:         localhost:3307
+```
+
+По умолчанию контейнеры не монтируют `backend`, `web` и SQL-файлы с хоста, поэтому они не ломаются от переименования родительской папки. После изменения кода пересоберите сервисы:
+
+```bash
+docker compose up -d --build --force-recreate
+```
+
+Настройки для Docker вынесены в переменные окружения. Шаблон лежит в `.env.example`; реальные значения держите в локальном `.env`, он исключён из Git.
+
+Админские права больше не определяются фронтендом по email. Backend хранит роль пользователя в поле `users.role`, отдаёт клиенту только `isAdmin`, а API админки проверяет роль на сервере. Для свежей базы сид админа включается только явно:
+
+```bash
+SEED_ADMIN_USER=true
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=<strong-local-password>
+```
+
+Если нужен режим разработки с живым обновлением файлов из проекта:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 ### Локальная разработка

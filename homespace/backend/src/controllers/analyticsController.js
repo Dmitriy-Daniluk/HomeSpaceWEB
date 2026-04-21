@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { PAGE_PERMISSIONS, getMembershipAccess } = require('../utils/rolePermissions');
 
 exports.getProductivity = async (req, res, next) => {
   try {
@@ -8,13 +9,15 @@ exports.getProductivity = async (req, res, next) => {
       return res.status(400).json({ error: 'familyId query param required' });
     }
 
-    const [membership] = await pool.query(
-      'SELECT role FROM family_members WHERE user_id = ? AND family_id = ?',
-      [req.user.id, familyId]
-    );
-
-    if (membership.length === 0) {
+    const membership = await getMembershipAccess(req.user.id, familyId);
+    if (!membership) {
       return res.status(403).json({ error: 'Not a member of this family' });
+    }
+    if (!membership.permissions.includes(PAGE_PERMISSIONS.analytics)) {
+      return res.status(403).json({
+        error: 'Analytics access denied',
+        message: 'Аналитика доступна родителю или участнику с разрешением роли.',
+      });
     }
 
     const [topPerformers] = await pool.query(
@@ -93,6 +96,17 @@ exports.exportData = async (req, res, next) => {
     const [family] = await pool.query('SELECT * FROM families WHERE id = ?', [familyId]);
     if (family.length === 0) {
       return res.status(404).json({ error: 'Family not found' });
+    }
+
+    const membership = await getMembershipAccess(req.user.id, familyId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Not a member of this family' });
+    }
+    if (!membership.permissions.includes(PAGE_PERMISSIONS.analytics)) {
+      return res.status(403).json({
+        error: 'Analytics export access denied',
+        message: 'Экспорт аналитики доступен родителю или участнику с разрешением роли.',
+      });
     }
 
     const [requester] = await pool.query(

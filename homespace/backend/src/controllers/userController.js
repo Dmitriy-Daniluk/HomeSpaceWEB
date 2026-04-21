@@ -1,10 +1,15 @@
 const pool = require('../config/db');
 const path = require('path');
+const { serializeAuthUser } = require('../utils/authUser');
+const { getFamilyRoleSummary } = require('../utils/familyRoles');
+const { getUserPermissionSummary } = require('../utils/rolePermissions');
 
 exports.getProfile = async (req, res, next) => {
   try {
     const [users] = await pool.query(
-      'SELECT id, email, full_name, birth_date, phone, avatar_url, has_subscription, subscription_until, created_at FROM users WHERE id = ?',
+      `SELECT id, email, full_name, birth_date, phone, avatar_url, role,
+              has_subscription, subscription_until, created_at
+       FROM users WHERE id = ?`,
       [req.user.id]
     );
 
@@ -20,6 +25,8 @@ exports.getProfile = async (req, res, next) => {
        WHERE fm.user_id = ?`,
       [req.user.id]
     );
+    const roleSummary = await getFamilyRoleSummary(req.user.id);
+    const permissionSummary = await getUserPermissionSummary(req.user.id);
 
     const [familyTaskStats] = await pool.query(
       `SELECT 
@@ -61,8 +68,15 @@ exports.getProfile = async (req, res, next) => {
       message: 'Profile retrieved',
       data: {
         ...user,
-        fullName: user.full_name,
-        avatarUrl: user.avatar_url,
+        ...serializeAuthUser(user),
+        familyRoles: roleSummary.roles,
+        isChildOnly: roleSummary.isChildOnly,
+        is_child_only: roleSummary.isChildOnly,
+        permissions: permissionSummary.permissions,
+        pagePermissions: permissionSummary.permissions,
+        page_permissions: permissionSummary.permissions,
+        familyPermissions: permissionSummary.familyPermissions,
+        family_permissions: permissionSummary.family_permissions,
         families,
         stats: {
           tasks: familyTaskStats[0],
@@ -99,14 +113,15 @@ exports.updateProfile = async (req, res, next) => {
     );
 
     const [users] = await pool.query(
-      'SELECT id, email, full_name, birth_date, phone, avatar_url FROM users WHERE id = ?',
+      `SELECT id, email, full_name, birth_date, phone, avatar_url, role,
+              has_subscription, subscription_until, created_at
+       FROM users WHERE id = ?`,
       [req.user.id]
     );
 
     const user = {
       ...users[0],
-      fullName: users[0].full_name,
-      avatarUrl: users[0].avatar_url,
+      ...serializeAuthUser(users[0]),
     };
 
     res.json({ message: 'Profile updated', data: user });
@@ -135,6 +150,14 @@ exports.purchaseSubscription = async (req, res, next) => {
   const connection = await pool.getConnection();
 
   try {
+    const roleSummary = await getFamilyRoleSummary(req.user.id);
+    if (roleSummary.isChildOnly) {
+      return res.status(403).json({
+        error: 'Subscription is parent-only',
+        message: 'Подписку может оплачивать только родительский аккаунт.',
+      });
+    }
+
     const plan = req.body.plan === 'year' ? 'year' : 'month';
     const months = plan === 'year' ? 12 : 1;
     const amount = plan === 'year' ? 2490 : 299;
@@ -172,7 +195,9 @@ exports.purchaseSubscription = async (req, res, next) => {
     );
 
     const [users] = await connection.query(
-      'SELECT id, email, full_name, birth_date, phone, avatar_url, has_subscription, subscription_until, created_at FROM users WHERE id = ?',
+      `SELECT id, email, full_name, birth_date, phone, avatar_url, role,
+              has_subscription, subscription_until, created_at
+       FROM users WHERE id = ?`,
       [req.user.id]
     );
 
@@ -182,8 +207,7 @@ exports.purchaseSubscription = async (req, res, next) => {
       message: 'Subscription activated',
       data: {
         ...users[0],
-        fullName: users[0].full_name,
-        avatarUrl: users[0].avatar_url,
+        ...serializeAuthUser(users[0]),
       },
       payment: {
         providerPaymentId,

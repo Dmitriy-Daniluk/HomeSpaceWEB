@@ -49,9 +49,13 @@ export default function PasswordsPage() {
     try {
       const res = await api.get('/families');
       const data = res.data.data || [];
-      setFamilies(data);
-      if (data.length > 0) setSelectedFamilyId(String(data[0].id));
-      if (data.length === 0) setLoading(false);
+      const accessibleFamilies = data.filter((family) => (
+        family.role === 'parent' ||
+        (family.currentUserPermissions || family.current_user_permissions || []).includes('passwords.view')
+      ));
+      setFamilies(accessibleFamilies);
+      if (accessibleFamilies.length > 0) setSelectedFamilyId(String(accessibleFamilies[0].id));
+      if (accessibleFamilies.length === 0) setLoading(false);
     } catch (err) { console.error(err); setLoading(false); }
   };
 
@@ -71,6 +75,9 @@ export default function PasswordsPage() {
     setSaving(true);
     try {
       const data = { ...form, familyId: selectedFamilyId };
+      if (editItem && !String(data.password || '').trim()) {
+        delete data.password;
+      }
       if (editItem) {
         await api.put(`/passwords/${editItem.id}`, data);
       } else {
@@ -106,6 +113,7 @@ export default function PasswordsPage() {
   };
 
   const copyToClipboard = (text, field) => {
+    if (!text) return;
     navigator.clipboard.writeText(text);
     setCopied(field);
     setTimeout(() => setCopied(null), 2000);
@@ -274,6 +282,7 @@ export default function PasswordsPage() {
                         </button>
                         <button
                           onClick={() => copyToClipboard(item.password || item.encrypted_password, `pass-${item.id}`)}
+                          disabled={!item.can_decrypt}
                           className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-500 transition-colors"
                           title="Копировать пароль"
                         >
@@ -297,7 +306,14 @@ export default function PasswordsPage() {
                   </div>
                   {showPassword[item.id] && (
                     <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg font-mono text-sm text-gray-700 dark:text-gray-300 animate-fade-in">
-                      {item.password || item.encrypted_password}
+                      {item.can_decrypt
+                        ? (item.password || item.encrypted_password)
+                        : 'Секрет нельзя расшифровать текущим ключом. Владелец записи может заменить пароль.'}
+                    </div>
+                  )}
+                  {!item.can_decrypt && (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                      Секрет был зашифрован другим ключом. Запись не потеряна, но пароль нужно заменить.
                     </div>
                   )}
                   {item.url && (
@@ -322,7 +338,14 @@ export default function PasswordsPage() {
           <form onSubmit={savePassword} className="space-y-4">
             <Input label="Сервис" value={form.service} onChange={(e) => setForm({ ...form, service: e.target.value })} placeholder="Google, VK..." required />
             <Input label="Логин" value={form.login} onChange={(e) => setForm({ ...form, login: e.target.value })} placeholder="username@email.com" required />
-            <Input label="Пароль" type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" required />
+            <Input
+              label={editItem ? 'Новый пароль' : 'Пароль'}
+              type="text"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder={editItem ? 'Оставьте пустым, если не меняем' : '••••••••'}
+              required={!editItem}
+            />
             <Input label="URL" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://..." />
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Заметки</label>

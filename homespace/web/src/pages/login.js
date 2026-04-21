@@ -7,8 +7,6 @@ import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 
-const ADMIN_EMAILS = ['admin@homespace.local', 'admin@homespace.ru', 'admin@example.com'];
-
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
@@ -25,7 +23,7 @@ export default function LoginPage() {
     try {
       const userData = await login(email, password);
       if (userData) {
-        window.location.href = ADMIN_EMAILS.includes(userData.email?.toLowerCase()) ? '/admin' : '/dashboard';
+        router.replace(userData.isAdmin ? '/admin' : '/dashboard');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка входа. Проверьте данные.');

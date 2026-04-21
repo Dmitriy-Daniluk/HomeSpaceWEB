@@ -41,9 +41,13 @@ export default function LocationPage() {
     try {
       const res = await api.get('/families');
       const data = res.data.data || [];
-      setFamilies(data);
-      if (data.length > 0) setSelectedFamilyId(String(data[0].id));
-      if (data.length === 0) setLoading(false);
+      const accessibleFamilies = data.filter((family) => (
+        family.role === 'parent' ||
+        (family.currentUserPermissions || family.current_user_permissions || []).includes('location.view')
+      ));
+      setFamilies(accessibleFamilies);
+      if (accessibleFamilies.length > 0) setSelectedFamilyId(String(accessibleFamilies[0].id));
+      if (accessibleFamilies.length === 0) setLoading(false);
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.message || 'Не удалось загрузить семьи');

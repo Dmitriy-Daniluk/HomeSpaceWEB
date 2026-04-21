@@ -57,11 +57,16 @@ export default function BudgetPage() {
     try {
       const res = await api.get('/families');
       const data = res.data.data || [];
-      setFamilies(data);
-      if (data.length > 0) {
+      const accessibleFamilies = data.filter((family) => (
+        family.role === 'parent' ||
+        (family.currentUserPermissions || family.current_user_permissions || []).includes('budget.view')
+      ));
+      setFamilies(accessibleFamilies);
+      if (accessibleFamilies.length > 0) {
         const queryFamilyId = router.query.familyId ? String(router.query.familyId) : '';
-        setSelectedFamilyId(queryFamilyId || String(data[0].id));
-        if (queryFamilyId) setMode('family');
+        const canUseQueryFamily = accessibleFamilies.some((family) => String(family.id) === queryFamilyId);
+        setSelectedFamilyId(canUseQueryFamily ? queryFamilyId : String(accessibleFamilies[0].id));
+        if (canUseQueryFamily || queryFamilyId) setMode('family');
       }
     } catch (err) { console.error(err); }
   };

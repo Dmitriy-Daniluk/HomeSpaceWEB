@@ -395,16 +395,11 @@ export default function AdminPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = {
-        service_name: editingPassword.service_name,
-        login: editingPassword.login,
-        url: editingPassword.url,
-        notes: editingPassword.notes,
-        visibility_level: editingPassword.visibility_level,
-      };
-      if (editingPassword.passwordDraft && editingPassword.passwordDraft.trim()) {
-        payload.password = editingPassword.passwordDraft;
+      if (!editingPassword.passwordDraft || !editingPassword.passwordDraft.trim()) {
+        window.alert('Введите новый секрет. Админ не может читать или менять метаданные vault-записи.');
+        return;
       }
+      const payload = { password: editingPassword.passwordDraft };
       await api.put(`/admin/passwords/${editingPassword.id}`, payload);
       setEditingPassword(null);
       fetchData();
@@ -789,14 +784,16 @@ export default function AdminPage() {
         <Modal isOpen={!!editingPassword} onClose={() => setEditingPassword(null)} title="Редактировать пароль" size="lg">
           {editingPassword && (
             <form onSubmit={savePassword} className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <Input label="Сервис" value={editingPassword.service_name || ''} onChange={(e) => setEditingPassword({ ...editingPassword, service_name: e.target.value })} />
-                <Input label="Логин" value={editingPassword.login || ''} onChange={(e) => setEditingPassword({ ...editingPassword, login: e.target.value })} />
-                <Input label="URL" value={editingPassword.url || ''} onChange={(e) => setEditingPassword({ ...editingPassword, url: e.target.value })} />
-                <Select label="Видимость" value={editingPassword.visibility_level || 'private'} onChange={(e) => setEditingPassword({ ...editingPassword, visibility_level: e.target.value })} options={entriesToOptions(visibilityLabels)} />
+              <div className="grid md:grid-cols-2 gap-4 text-sm">
+                <ReadOnlyField label="Сервис" value={editingPassword.service_name || '-'} />
+                <ReadOnlyField label="Логин" value={editingPassword.login || '-'} />
+                <ReadOnlyField label="URL" value={editingPassword.url || '-'} />
+                <ReadOnlyField label="Видимость" value={visibilityLabels[editingPassword.visibility_level] || editingPassword.visibility_level || '-'} />
               </div>
-              <Input label="Новый секрет" value={editingPassword.passwordDraft ?? ''} onChange={(e) => setEditingPassword({ ...editingPassword, passwordDraft: e.target.value })} placeholder="Админ может только заменить секрет, не увидеть старый" />
-              <Textarea label="Заметки" value={editingPassword.notes || ''} onChange={(e) => setEditingPassword({ ...editingPassword, notes: e.target.value })} />
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                Админ видит только метаданные. Старый секрет не расшифровывается; можно только заменить его новым значением.
+              </div>
+              <Input label="Новый секрет" value={editingPassword.passwordDraft ?? ''} onChange={(e) => setEditingPassword({ ...editingPassword, passwordDraft: e.target.value })} placeholder="Введите новый секрет" required />
               <ModalActions onCancel={() => setEditingPassword(null)} saving={saving} />
             </form>
           )}
@@ -1339,6 +1336,17 @@ function Select({ label, value, onChange, options }) {
       <select value={value} onChange={onChange} className="w-full rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
+    </div>
+  );
+}
+
+function ReadOnlyField({ label, value }) {
+  return (
+    <div>
+      <p className="mb-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">{label}</p>
+      <div className="min-h-[42px] rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">
+        {value}
+      </div>
     </div>
   );
 }

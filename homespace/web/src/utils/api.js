@@ -27,7 +27,12 @@ api.interceptors.response.use(
     if (typeof window !== 'undefined' && error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      window.dispatchEvent(new Event('homespace:auth-expired'));
+
+      const isAuthPage = ['/login', '/register', '/forgot-password'].includes(window.location.pathname);
+      if (!isAuthPage) {
+        window.location.replace('/login');
+      }
     }
     return Promise.reject(error);
   }

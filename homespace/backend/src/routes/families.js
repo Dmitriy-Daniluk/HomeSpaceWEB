@@ -6,12 +6,16 @@ const { auth } = require('../middleware/auth');
 router.get('/', auth, familyController.getMyFamilies);
 router.post('/', auth, familyController.createFamily);
 router.get('/:id/overview', auth, familyController.getFamilyOverview);
+router.get('/:id/roles', auth, familyController.getCustomRoles);
 router.get('/:id', auth, familyController.getFamilyDetails);
 router.post('/:id/invite', auth, familyController.inviteMember);
 router.post('/:id/children', auth, familyController.createChildAccount);
+router.post('/:id/roles', auth, familyController.createCustomRole);
 router.post('/join', auth, familyController.joinByCode);
 router.put('/:id', auth, familyController.updateFamily);
 router.put('/:id/member/:userId/role', auth, familyController.updateMemberRole);
+router.put('/:id/roles/:roleId', auth, familyController.updateCustomRole);
+router.delete('/:id/roles/:roleId', auth, familyController.deleteCustomRole);
 router.delete('/:id/member/:userId', auth, familyController.removeMember);
 
 module.exports = router;

@@ -391,58 +391,21 @@ exports.getAdminPasswords = async (req, res, next) => {
 exports.updateAdminPassword = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const serviceName = req.body.serviceName ?? req.body.service_name;
     const password = req.body.password ?? req.body.encryptedPassword ?? req.body.encrypted_password;
-    const { login, url, notes } = req.body;
-    const visibilityLevel = req.body.visibilityLevel ?? req.body.visibility_level;
 
     const [existing] = await pool.query('SELECT * FROM password_vault WHERE id = ?', [id]);
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Password entry not found' });
     }
 
-    const updates = [];
-    const params = [];
-    const hasOwn = (field) => Object.prototype.hasOwnProperty.call(req.body, field);
-
-    if (serviceName !== undefined) {
-      if (!String(serviceName).trim()) return res.status(400).json({ error: 'Service name required' });
-      updates.push('service_name = ?');
-      params.push(String(serviceName).trim());
-    }
-    if (hasOwn('login')) {
-      updates.push('login = ?');
-      params.push(login || null);
-    }
-    if (password !== undefined) {
-      if (!String(password)) {
-        return res.status(400).json({ error: 'Password secret cannot be empty' });
-      }
-      updates.push('encrypted_password = ?');
-      params.push(encryptSecret(password));
-    }
-    if (hasOwn('url')) {
-      updates.push('url = ?');
-      params.push(url || null);
-    }
-    if (hasOwn('notes')) {
-      updates.push('notes = ?');
-      params.push(notes || null);
-    }
-    if (visibilityLevel !== undefined) {
-      if (!['private', 'parents', 'family'].includes(visibilityLevel)) {
-        return res.status(400).json({ error: 'Invalid visibility level' });
-      }
-      updates.push('visibility_level = ?');
-      params.push(visibilityLevel);
+    if (!password || !String(password).trim()) {
+      return res.status(400).json({
+        error: 'Password secret cannot be empty',
+        message: 'Администратор может только заменить секрет записи.',
+      });
     }
 
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    params.push(id);
-    await pool.query(`UPDATE password_vault SET ${updates.join(', ')} WHERE id = ?`, params);
+    await pool.query('UPDATE password_vault SET encrypted_password = ? WHERE id = ?', [encryptSecret(password), id]);
 
     const [passwords] = await pool.query(
       `SELECT p.*, u.email as owner_email, u.full_name as owner_name, f.name as family_name
@@ -455,7 +418,7 @@ exports.updateAdminPassword = async (req, res, next) => {
 
     await logAdminAction(req, 'update_password', 'password_vault', Number(id), {
       service_name: passwords[0]?.service_name,
-      changed_fields: updates.map((item) => item.split(' = ')[0]),
+      changed_fields: ['encrypted_password'],
     });
 
     res.json({ message: 'Password entry updated', data: mapAdminPassword(passwords[0]) });

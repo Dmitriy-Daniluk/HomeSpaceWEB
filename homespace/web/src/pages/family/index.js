@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { Users, Plus, Target, UserCheck, ArrowRight } from 'lucide-react';
 import api from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -11,6 +13,9 @@ import EmptyState from '../../components/ui/EmptyState';
 import Loading from '../../components/ui/Loading';
 
 export default function FamilyListPage() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const isChildOnly = Boolean(user?.isChildOnly || user?.is_child_only);
   const [families, setFamilies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -50,7 +55,7 @@ export default function FamilyListPage() {
       setNewFamily({ name: '', description: '', savings_goal: '' });
       await fetchFamilies();
       if (res.data.data?.id) {
-        window.location.href = `/family/${res.data.data.id}`;
+        router.push(`/family/${res.data.data.id}`);
       }
     } catch (err) {
       console.error(err);
@@ -92,9 +97,11 @@ export default function FamilyListPage() {
             <Button variant="secondary" onClick={() => setShowJoinModal(true)}>
               Вступить
             </Button>
-            <Button onClick={() => setShowCreateModal(true)} icon={<Plus className="w-4 h-4" />}>
-              Создать семью
-            </Button>
+            {!isChildOnly && (
+              <Button onClick={() => setShowCreateModal(true)} icon={<Plus className="w-4 h-4" />}>
+                Создать семью
+              </Button>
+            )}
           </div>
         </div>
 
@@ -111,8 +118,10 @@ export default function FamilyListPage() {
             description="Создайте свою первую семью или вступите по коду"
             action={
               <div className="flex gap-3">
-                <Button onClick={() => setShowCreateModal(true)} icon={<Plus className="w-4 h-4" />}>Создать</Button>
                 <Button variant="secondary" onClick={() => setShowJoinModal(true)}>Вступить</Button>
+                {!isChildOnly && (
+                  <Button onClick={() => setShowCreateModal(true)} icon={<Plus className="w-4 h-4" />}>Создать</Button>
+                )}
               </div>
             }
           />
