@@ -1,0 +1,272 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@layer base {
+  * {
+    @apply border-gray-200 dark:border-gray-800;
+  }
+  body {
+    @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-200;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-700 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-600;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow duration-200;
+  }
+  .card-header {
+    @apply px-6 py-4 border-b border-gray-100 dark:border-gray-800;
+  }
+  .card-body {
+    @apply p-6;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 shadow-sm hover:shadow;
+  }
+  .btn-secondary {
+    @apply btn bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-gray-500;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+  .btn-ghost {
+    @apply btn text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800;
+  }
+  .input {
+    @apply w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-new {
+    @apply badge bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300;
+  }
+  .badge-progress {
+    @apply badge bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300;
+  }
+  .badge-done {
+    @apply badge bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300;
+  }
+  .badge-high {
+    @apply badge bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300;
+  }
+  .badge-medium {
+    @apply badge bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300;
+  }
+  .badge-low {
+    @apply badge bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300;
+  }
+  .badge-parent {
+    @apply badge bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300;
+  }
+  .badge-child {
+    @apply badge bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-300;
+  }
+  .stat-card {
+    @apply card p-6;
+  }
+  .stat-value {
+    @apply text-2xl font-bold text-gray-900 dark:text-white;
+  }
+  .stat-label {
+    @apply text-sm text-gray-500 dark:text-gray-400 mt-1;
+  }
+  .page-header {
+    @apply mb-8;
+  }
+  .page-title {
+    @apply text-3xl font-bold text-gray-900 dark:text-white;
+  }
+  .page-subtitle {
+    @apply text-gray-500 dark:text-gray-400 mt-1;
+  }
+  .page-canvas {
+    position: relative;
+    isolation: isolate;
+    background: var(--page-base, #f8fafc);
+  }
+  .page-canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(135deg, var(--page-band-start, rgba(99, 102, 241, 0.12)), transparent 36%),
+      linear-gradient(180deg, var(--page-band-end, rgba(16, 185, 129, 0.08)), transparent 32%),
+      linear-gradient(90deg, var(--page-grid, rgba(99, 102, 241, 0.06)) 1px, transparent 1px),
+      linear-gradient(180deg, var(--page-grid, rgba(99, 102, 241, 0.06)) 1px, transparent 1px);
+    background-size: auto, auto, 56px 56px, 56px 56px;
+  }
+  .page-canvas::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 0;
+    height: 190px;
+    pointer-events: none;
+    background: linear-gradient(90deg, var(--page-ribbon-start, rgba(255, 255, 255, 0.62)), var(--page-ribbon-end, rgba(255, 255, 255, 0)));
+  }
+  .page-canvas > * {
+    position: relative;
+    z-index: 1;
+  }
+  .page-theme-default,
+  .page-theme-tasks {
+    --page-base: #f8fafc;
+    --page-band-start: rgba(99, 102, 241, 0.14);
+    --page-band-end: rgba(245, 158, 11, 0.1);
+    --page-grid: rgba(99, 102, 241, 0.07);
+    --page-ribbon-start: rgba(255, 255, 255, 0.72);
+    --page-ribbon-end: rgba(255, 255, 255, 0);
+  }
+  .page-theme-budget {
+    --page-base: #f7fcfa;
+    --page-band-start: rgba(16, 185, 129, 0.14);
+    --page-band-end: rgba(14, 165, 233, 0.1);
+    --page-grid: rgba(16, 185, 129, 0.07);
+  }
+  .page-theme-family {
+    --page-base: #fff8fb;
+    --page-band-start: rgba(236, 72, 153, 0.12);
+    --page-band-end: rgba(6, 182, 212, 0.11);
+    --page-grid: rgba(236, 72, 153, 0.06);
+  }
+  .page-theme-profile {
+    --page-base: #faf8ff;
+    --page-band-start: rgba(139, 92, 246, 0.13);
+    --page-band-end: rgba(20, 184, 166, 0.09);
+    --page-grid: rgba(139, 92, 246, 0.06);
+  }
+  .page-theme-analytics {
+    --page-base: #f8fafc;
+    --page-band-start: rgba(15, 23, 42, 0.1);
+    --page-band-end: rgba(245, 158, 11, 0.12);
+    --page-grid: rgba(15, 23, 42, 0.05);
+  }
+  .page-theme-files {
+    --page-base: #f7fbff;
+    --page-band-start: rgba(59, 130, 246, 0.12);
+    --page-band-end: rgba(20, 184, 166, 0.1);
+    --page-grid: rgba(59, 130, 246, 0.06);
+  }
+  .page-theme-passwords {
+    --page-base: #fbf8ff;
+    --page-band-start: rgba(124, 58, 237, 0.13);
+    --page-band-end: rgba(244, 63, 94, 0.09);
+    --page-grid: rgba(124, 58, 237, 0.06);
+  }
+  .page-theme-subscription {
+    --page-base: #fffaf2;
+    --page-band-start: rgba(245, 158, 11, 0.14);
+    --page-band-end: rgba(99, 102, 241, 0.11);
+    --page-grid: rgba(245, 158, 11, 0.07);
+  }
+  .page-theme-location {
+    --page-base: #f6fffb;
+    --page-band-start: rgba(34, 197, 94, 0.13);
+    --page-band-end: rgba(6, 182, 212, 0.12);
+    --page-grid: rgba(34, 197, 94, 0.06);
+  }
+  .page-theme-chat {
+    --page-base: #f7fbff;
+    --page-band-start: rgba(14, 165, 233, 0.13);
+    --page-band-end: rgba(168, 85, 247, 0.1);
+    --page-grid: rgba(14, 165, 233, 0.06);
+  }
+  .page-theme-support,
+  .page-theme-notifications {
+    --page-base: #fffaf7;
+    --page-band-start: rgba(249, 115, 22, 0.12);
+    --page-band-end: rgba(236, 72, 153, 0.09);
+    --page-grid: rgba(249, 115, 22, 0.06);
+  }
+  .page-theme-admin {
+    --page-base: #f8fafc;
+    --page-band-start: rgba(239, 68, 68, 0.1);
+    --page-band-end: rgba(15, 23, 42, 0.1);
+    --page-grid: rgba(239, 68, 68, 0.05);
+  }
+  .dark .page-theme-default,
+  .dark .page-theme-tasks,
+  .dark .page-theme-budget,
+  .dark .page-theme-family,
+  .dark .page-theme-profile,
+  .dark .page-theme-analytics,
+  .dark .page-theme-files,
+  .dark .page-theme-passwords,
+  .dark .page-theme-subscription,
+  .dark .page-theme-location,
+  .dark .page-theme-chat,
+  .dark .page-theme-support,
+  .dark .page-theme-notifications,
+  .dark .page-theme-admin {
+    --page-base: #0f172a;
+    --page-grid: rgba(255, 255, 255, 0.045);
+    --page-ribbon-start: rgba(15, 23, 42, 0.72);
+    --page-ribbon-end: rgba(15, 23, 42, 0);
+  }
+  .dark .page-theme-budget {
+    --page-band-start: rgba(16, 185, 129, 0.16);
+    --page-band-end: rgba(14, 165, 233, 0.1);
+  }
+  .dark .page-theme-family {
+    --page-band-start: rgba(236, 72, 153, 0.14);
+    --page-band-end: rgba(6, 182, 212, 0.1);
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+  .animate-slide-in-left {
+    animation: slideInLeft 0.3s ease-out;
+  }
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}

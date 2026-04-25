@@ -1,0 +1,86 @@
+services:
+  mysql:
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    image: homespace-mysql:8.0
+    container_name: homespace-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-homespace_model}
+      MYSQL_USER: ${DB_USER:-homespace_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-homespace_pass}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - homespace-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: homespace-backend
+    restart: always
+    ports:
+      - "5001:5001"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-homespace_user}
+      DB_PASSWORD: ${DB_PASSWORD:-homespace_pass}
+      DB_NAME: ${DB_NAME:-homespace_model}
+      JWT_SECRET: ${JWT_SECRET:-homespace_dev_jwt_secret_change_me}
+      JWT_EXPIRE: ${JWT_EXPIRE:-7d}
+      PASSWORD_VAULT_KEY: ${PASSWORD_VAULT_KEY:-homespace_dev_password_vault_key_change_me}
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 5001
+      UPLOAD_DIR: /app/uploads
+      FRONTEND_URL: http://localhost:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      APP_NAME: HomeSpace
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-5000}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@homespace.local,admin@homespace.ru,admin@example.com}
+      SEED_ADMIN_USER: ${SEED_ADMIN_USER:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@homespace.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-HomeSpace Admin}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - homespace-net
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: homespace-web
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5001/api
+      BACKEND_INTERNAL_URL: http://backend:5001
+      NEXT_PUBLIC_APP_NAME: HomeSpace
+    depends_on:
+      - backend
+    networks:
+      - homespace-net
+
+volumes:
+  mysql_data:
+  uploads_data:
+
+networks:
+  homespace-net:
+    driver: bridge

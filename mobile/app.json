@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "HomeSpace",
+    "slug": "homespace",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563eb"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.homespace.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "HomeSpace использует ваше местоположение для отслеживания перемещений членов семьи",
+        "NSCameraUsageDescription": "HomeSpace нуждается в доступе к камере для загрузки фотографий",
+        "NSPhotoLibraryUsageDescription": "HomeSpace нуждается в доступе к фотографиям для прикрепления файлов к задачам"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563eb"
+      },
+      "package": "com.homespace.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-location",
+      "expo-image-picker",
+      "expo-document-picker"
+    ]
+  }
+}
