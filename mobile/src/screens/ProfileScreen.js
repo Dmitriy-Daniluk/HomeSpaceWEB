@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
@@ -22,23 +22,13 @@ import { getResponseData } from '../utils/syncService';
 const ProfileScreen = ({ navigation }) => {
   const { colors } = useTheme();
   const { user, logout, updateUser } = useAuth();
-  const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(false);
   const permissions = getPagePermissions(user);
   const isChildOnly = isChildOnlyUser(user);
   const showSubscription = !isChildOnly;
 
-  useEffect(() => {
-    loadStats();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => loadStats());
-    return unsubscribe;
-  }, [navigation]);
-
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const response = await authApi.getMe();
       const profile = getResponseData(response);
@@ -57,7 +47,12 @@ const ProfileScreen = ({ navigation }) => {
     } catch (err) {
       console.error('Ошибка загрузки статистики:', err);
     }
-  };
+  }, [updateUser]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadStats();
+  }, [isFocused, loadStats]);
 
   const handleLogout = () => {
     Alert.alert('Выход', 'Вы уверены, что хотите выйти?', [
@@ -73,6 +68,7 @@ const ProfileScreen = ({ navigation }) => {
   const settingsItems = [
     { icon: 'bell', label: 'Уведомления', screen: 'Notifications' },
     { icon: 'message-text', label: 'Чат', screen: 'Chat' },
+    { icon: 'lifebuoy', label: 'Поддержка', screen: 'Support' },
     ...(showSubscription ? [{ icon: 'crown-outline', label: 'Подписка', screen: 'Subscription' }] : []),
     ...(!isChildOnly || permissions.has('passwords.view') ? [{ icon: 'shield-lock', label: 'Пароли', screen: 'Passwords' }] : []),
     ...(!isChildOnly || permissions.has('location.view') ? [{ icon: 'map-marker', label: 'Местоположение', screen: 'Location' }] : []),

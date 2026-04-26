@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,29 +9,25 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import TaskItem from '../components/TaskItem';
 import EmptyState from '../components/EmptyState';
 import { LoadingOverlay, TaskSkeleton } from '../components/Loading';
-import Button from '../components/Button';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { families as familiesApi, tasks as tasksApi } from '../utils/api';
 import { tasksDB } from '../db/database';
-import { TASK_STATUS, TASK_STATUS_LABELS } from '../utils/constants';
 import {
   getResponseData,
-  isNetworkError,
+  isRetryableRequestError,
   syncPendingTasks,
   toArrayData,
 } from '../utils/syncService';
 
 const TasksScreen = ({ navigation }) => {
   const { colors } = useTheme();
-  const { refreshUser } = useAuth();
-  const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const [tasks, setTasks] = useState([]);
   const [families, setFamilies] = useState([]);
   const [selectedFamily, setSelectedFamily] = useState(null);
@@ -39,24 +35,10 @@ const TasksScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [mode, setMode] = useState('personal');
+  const taskLoadRequestRef = useRef(0);
+  const taskFamilyId = mode === 'family' ? selectedFamily : null;
 
-  useEffect(() => {
-    loadTasks();
-  }, [selectedFamily, statusFilter, mode]);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadFamilies();
-      loadTasks();
-    });
-    return unsubscribe;
-  }, [navigation, selectedFamily, statusFilter, mode]);
-
-  useEffect(() => {
-    loadFamilies();
-  }, []);
-
-  const loadFamilies = async () => {
+  const loadFamilies = useCallback(async () => {
     try {
       const response = await familiesApi.getAll();
       const nextFamilies = toArrayData(response);
@@ -72,18 +54,20 @@ const TasksScreen = ({ navigation }) => {
           return nextFamilies[0].id;
         });
       }
-
-      await refreshUser();
     } catch (err) {
       console.error('Ошибка загрузки семей:', err);
     }
-  };
+  }, []);
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
+    const requestId = ++taskLoadRequestRef.current;
+
     try {
       setLoading(true);
-      if (mode === 'family' && !selectedFamily) {
-        setTasks([]);
+      if (mode === 'family' && !taskFamilyId) {
+        if (taskLoadRequestRef.current === requestId) {
+          setTasks([]);
+        }
         return;
       }
 
@@ -91,7 +75,7 @@ const TasksScreen = ({ navigation }) => {
 
       const params = {};
       if (mode === 'family') {
-        params.familyId = selectedFamily;
+        params.familyId = taskFamilyId;
       }
       if (statusFilter !== 'all') {
         params.status = statusFilter;
@@ -99,22 +83,38 @@ const TasksScreen = ({ navigation }) => {
       const response = await tasksApi.getAll(params);
       const tasksData = toArrayData(response);
       await tasksDB.cacheRemoteList(tasksData);
-      const cached = await tasksDB.getAll(mode === 'family' ? selectedFamily : null);
-      setTasks(statusFilter === 'all' ? cached : cached.filter((t) => t.status === statusFilter));
+      const cached = await tasksDB.getAll(taskFamilyId);
+      if (taskLoadRequestRef.current === requestId) {
+        setTasks(statusFilter === 'all' ? cached : cached.filter((t) => t.status === statusFilter));
+      }
     } catch (err) {
       console.error('Ошибка загрузки задач:', err);
-      const cached = await tasksDB.getAll(mode === 'family' ? selectedFamily : null);
-      setTasks(statusFilter === 'all' ? cached : cached.filter((t) => t.status === statusFilter));
+      const cached = await tasksDB.getAll(taskFamilyId);
+      if (taskLoadRequestRef.current === requestId) {
+        setTasks(statusFilter === 'all' ? cached : cached.filter((t) => t.status === statusFilter));
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (taskLoadRequestRef.current === requestId) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  };
+  }, [mode, statusFilter, taskFamilyId]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadFamilies();
+  }, [isFocused, loadFamilies]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadTasks();
+  }, [isFocused, loadTasks]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadTasks();
-  }, [selectedFamily, statusFilter, mode]);
+  }, [loadTasks]);
 
   const handleStatusChange = async (taskOrId, newStatus) => {
     const task = typeof taskOrId === 'object'
@@ -137,7 +137,7 @@ const TasksScreen = ({ navigation }) => {
         prev.map((t) => (String(t.id) === String(task?.id || taskId) ? { ...t, status: newStatus, synced: 1 } : t))
       );
     } catch (err) {
-      if (isNetworkError(err)) {
+      if (isRetryableRequestError(err)) {
         await tasksDB.changeStatus(task?.id || taskId, newStatus);
         return;
       }
@@ -163,7 +163,7 @@ const TasksScreen = ({ navigation }) => {
             }
             setTasks((prev) => prev.filter((t) => t.id !== taskId));
           } catch (err) {
-            if (isNetworkError(err)) {
+            if (isRetryableRequestError(err)) {
               await tasksDB.markDeleted(taskId);
               setTasks((prev) => prev.filter((t) => String(t.id) !== String(task?.id || taskId)));
               return;

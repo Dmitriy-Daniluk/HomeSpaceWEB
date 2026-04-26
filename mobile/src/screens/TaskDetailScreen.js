@@ -7,6 +7,7 @@ import {
   Alert,
   TouchableOpacity,
   Platform,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
@@ -20,7 +21,7 @@ import { tasks as tasksApi } from '../utils/api';
 import { tasksDB } from '../db/database';
 import { getStatusColor, getPriorityColor, formatDateTime } from '../utils/helpers';
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS } from '../utils/constants';
-import { getResponseData, isNetworkError } from '../utils/syncService';
+import { getResponseData, isRetryableRequestError } from '../utils/syncService';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 
@@ -78,7 +79,7 @@ const TaskDetailScreen = ({ route, navigation }) => {
       setTask((prev) => ({ ...prev, status: newStatus }));
       setShowStatusModal(false);
     } catch (err) {
-      if (isNetworkError(err)) {
+      if (isRetryableRequestError(err)) {
         await tasksDB.changeStatus(task?.id || taskId, newStatus);
         setTask((prev) => ({ ...prev, status: newStatus, synced: 0 }));
         setShowStatusModal(false);
@@ -105,7 +106,7 @@ const TaskDetailScreen = ({ route, navigation }) => {
             }
             navigation.goBack();
           } catch (err) {
-            if (isNetworkError(err)) {
+            if (isRetryableRequestError(err)) {
               await tasksDB.markDeleted(task?.id || taskId);
               navigation.goBack();
               return;
@@ -115,6 +116,25 @@ const TaskDetailScreen = ({ route, navigation }) => {
         },
       },
     ]);
+  };
+
+  const openAttachment = async (attachment) => {
+    const fileUrl = attachment?.file_path || attachment?.filePath;
+    if (!fileUrl) {
+      Alert.alert('Файл недоступен', 'Для этого вложения пока нет ссылки.');
+      return;
+    }
+
+    try {
+      const supported = await Linking.canOpenURL(fileUrl);
+      if (!supported) {
+        Alert.alert('Не удалось открыть', 'Устройство не поддерживает открытие этого файла.');
+        return;
+      }
+      await Linking.openURL(fileUrl);
+    } catch (error) {
+      Alert.alert('Ошибка', 'Не удалось открыть файл.');
+    }
   };
 
   const pickImage = async () => {
@@ -295,7 +315,12 @@ const TaskDetailScreen = ({ route, navigation }) => {
             </Text>
           ) : (
             attachments.map((att) => (
-              <View key={att.id} style={[styles.attachmentItem, { backgroundColor: colors.surface }]}>
+              <TouchableOpacity
+                key={att.id}
+                activeOpacity={0.8}
+                onPress={() => openAttachment(att)}
+                style={[styles.attachmentItem, { backgroundColor: colors.surface }]}
+              >
                 <Icon
                   name={att.file_type === 'image' ? 'image' : 'file-document'}
                   size={24}
@@ -304,7 +329,8 @@ const TaskDetailScreen = ({ route, navigation }) => {
                 <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
                   {att.file_name || 'Файл'}
                 </Text>
-              </View>
+                <Icon name="open-in-new" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
             ))
           )}
         </Card>

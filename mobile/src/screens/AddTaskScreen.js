@@ -20,7 +20,7 @@ import { families as familiesApi, tasks as tasksApi } from '../utils/api';
 import { tasksDB } from '../db/database';
 import { TASK_PRIORITY, TASK_PRIORITY_LABELS, TASK_STATUS } from '../utils/constants';
 import { formatDateForApi, getPriorityColor } from '../utils/helpers';
-import { getResponseData, isNetworkError } from '../utils/syncService';
+import { getResponseData, isRetryableRequestError } from '../utils/syncService';
 
 const AddTaskScreen = ({ route, navigation }) => {
   const { task: existingTask, mode, familyId } = route.params || {};
@@ -98,7 +98,7 @@ const AddTaskScreen = ({ route, navigation }) => {
       }
       navigation.goBack();
     } catch (err) {
-      if (isNetworkError(err)) {
+      if (isRetryableRequestError(err)) {
         const resolvedFamilyId = familyId || existingTask?.family_id || null;
         const localTask = {
           title: title.trim(),
@@ -115,7 +115,7 @@ const AddTaskScreen = ({ route, navigation }) => {
         } else {
           await tasksDB.insertLocal(localTask);
         }
-        Alert.alert('Сохранено локально', 'Изменение отправится на сервер, когда появится подключение.');
+        Alert.alert('Сохранено локально', 'Изменение отправится на сервер, когда он снова будет доступен.');
         navigation.goBack();
         return;
       }

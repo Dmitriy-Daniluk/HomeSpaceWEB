@@ -9,10 +9,10 @@ import {
   RefreshControl,
   Image,
   Platform,
+  Linking,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Card from '../components/Card';
 import BottomSheetModal from '../components/Modal';
@@ -28,7 +28,7 @@ import * as DocumentPicker from 'expo-document-picker';
 
 const FilesScreen = ({ navigation }) => {
   const { colors } = useTheme();
-  const { refreshUser } = useAuth();
+  const isFocused = useIsFocused();
   const [files, setFiles] = useState([]);
   const [families, setFamilies] = useState([]);
   const [selectedFamily, setSelectedFamily] = useState(null);
@@ -38,38 +38,24 @@ const FilesScreen = ({ navigation }) => {
   const [filterType, setFilterType] = useState('all');
   const [showUploadModal, setShowUploadModal] = useState(false);
 
-  useEffect(() => {
-    loadFamilies();
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadFamilies();
-      loadFiles();
-    }, [filterType, selectedFamily])
-  );
-
-  useEffect(() => {
-    loadFiles();
-  }, [filterType, selectedFamily]);
-
-  const loadFamilies = async () => {
+  const loadFamilies = useCallback(async () => {
     try {
       const response = await familiesApi.getAll();
       const data = toArrayData(response).filter((family) => canAccessFamilyFeature(family, 'files.view'));
       setFamilies(data);
-      if (data.length === 0) {
-        setSelectedFamily(null);
-      } else if (!selectedFamily || !data.some((family) => String(family.id) === String(selectedFamily))) {
-        setSelectedFamily(data[0].id);
-      }
-      await refreshUser();
+      setSelectedFamily((current) => {
+        if (data.length === 0) return null;
+        if (current && data.some((family) => String(family.id) === String(current))) {
+          return current;
+        }
+        return data[0].id;
+      });
     } catch (err) {
       console.error('Ошибка загрузки семей:', err);
     }
-  };
+  }, []);
 
-  const loadFiles = async () => {
+  const loadFiles = useCallback(async () => {
     try {
       setLoading(true);
       const params = {
@@ -84,12 +70,22 @@ const FilesScreen = ({ navigation }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [filterType, selectedFamily]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadFamilies();
+  }, [isFocused, loadFamilies]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadFiles();
+  }, [isFocused, loadFiles]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadFiles();
-  }, [filterType]);
+  }, [loadFiles]);
 
   const uploadImage = async () => {
     if (!selectedFamily) {
@@ -178,6 +174,25 @@ const FilesScreen = ({ navigation }) => {
     ]);
   };
 
+  const openFile = async (file) => {
+    const fileUrl = file?.file_path || file?.filePath;
+    if (!fileUrl) {
+      Alert.alert('Файл недоступен', 'Для этого вложения пока нет ссылки.');
+      return;
+    }
+
+    try {
+      const supported = await Linking.canOpenURL(fileUrl);
+      if (!supported) {
+        Alert.alert('Не удалось открыть', 'Устройство не поддерживает открытие этого файла.');
+        return;
+      }
+      await Linking.openURL(fileUrl);
+    } catch (error) {
+      Alert.alert('Ошибка', 'Не удалось открыть файл.');
+    }
+  };
+
   const getFileIcon = (fileType) => {
     switch (fileType) {
       case 'image': return 'image';
@@ -201,7 +216,8 @@ const FilesScreen = ({ navigation }) => {
     : files.filter((f) => f.file_type === filterType);
 
   const renderListItem = ({ item }) => (
-    <Card style={styles.fileCard}>
+    <TouchableOpacity activeOpacity={0.8} onPress={() => openFile(item)}>
+      <Card style={styles.fileCard}>
       <View style={styles.fileRow}>
         <View style={[styles.fileIconContainer, { backgroundColor: getFileColor(item.file_type) + '15' }]}>
           <Icon name={getFileIcon(item.file_type)} size={28} color={getFileColor(item.file_type)} />
@@ -219,17 +235,25 @@ const FilesScreen = ({ navigation }) => {
             </Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
+        <TouchableOpacity
+          onPress={(event) => {
+            event.stopPropagation?.();
+            handleDelete(item.id);
+          }}
+          style={styles.deleteButton}
+        >
           <Icon name="delete" size={20} color={colors.danger} />
         </TouchableOpacity>
       </View>
-    </Card>
+      </Card>
+    </TouchableOpacity>
   );
 
   const renderGridItem = ({ item }) => (
     <TouchableOpacity
       style={[styles.gridItem, { backgroundColor: colors.card }]}
       activeOpacity={0.7}
+      onPress={() => openFile(item)}
       onLongPress={() => handleDelete(item.id)}
     >
       {item.file_type === 'image' && item.thumbnail_uri ? (

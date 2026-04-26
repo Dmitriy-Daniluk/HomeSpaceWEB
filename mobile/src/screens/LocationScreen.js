@@ -19,11 +19,27 @@ import { families as familiesApi, location as locationApi } from '../utils/api';
 import { locationsDB } from '../db/database';
 import * as Location from 'expo-location';
 import { canAccessFamilyFeature, formatRelativeDate } from '../utils/helpers';
-import { getResponseData, isNetworkError, toArrayData } from '../utils/syncService';
+import { getResponseData, isRetryableRequestError, toArrayData } from '../utils/syncService';
+
+const withTimeout = (promise, timeoutMs, message) => (
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+
+    Promise.resolve(promise)
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  })
+);
 
 const LocationScreen = ({ navigation }) => {
   const { colors } = useTheme();
-  const { user, refreshUser } = useAuth();
+  const { user } = useAuth();
   const [families, setFamilies] = useState([]);
   const [selectedFamily, setSelectedFamily] = useState(null);
   const [members, setMembers] = useState([]);
@@ -48,7 +64,6 @@ const LocationScreen = ({ navigation }) => {
         setFamilies(familyList);
         familyId = familyId || familyList[0]?.id || null;
         if (familyId && !selectedFamily) setSelectedFamily(familyId);
-        await refreshUser();
       }
       if (!familyId) {
         setMembers([]);
@@ -122,21 +137,42 @@ const LocationScreen = ({ navigation }) => {
 
     try {
       setUpdatingLocation(true);
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await withTimeout(
+        Location.requestForegroundPermissionsAsync(),
+        10000,
+        'Не удалось запросить доступ к геолокации. Перезапустите экран и попробуйте снова.'
+      );
       if (status !== 'granted') {
         Alert.alert('Ошибка', 'Доступ к местоположению не разрешён');
         return;
       }
       if (Platform.OS === 'android' && Location.enableNetworkProviderAsync) {
-        await Location.enableNetworkProviderAsync().catch(() => {});
+        await withTimeout(
+          Location.enableNetworkProviderAsync(),
+          5000,
+          'Служба геолокации на устройстве не ответила вовремя.'
+        ).catch(() => {});
       }
       const lastKnown = await Location.getLastKnownPositionAsync();
-      const current = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-        maximumAge: 15000,
-      }).catch(() => null);
+      let currentPositionError = null;
+      const current = await withTimeout(
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          maximumAge: 15000,
+        }),
+        12000,
+        Platform.OS === 'android'
+          ? 'Эмулятор не вернул координаты вовремя. Откройте Extended Controls -> Location и задайте точку.'
+          : 'Устройство не вернуло координаты вовремя. Попробуйте ещё раз.'
+      ).catch((error) => {
+        currentPositionError = error;
+        return null;
+      });
       const coords = current?.coords || lastKnown?.coords;
       if (!coords) {
+        if (currentPositionError) {
+          throw currentPositionError;
+        }
         Alert.alert('Нет данных', 'Устройство не смогло определить текущее местоположение.');
         return;
       }
@@ -150,8 +186,8 @@ const LocationScreen = ({ navigation }) => {
       Alert.alert('Успех', 'Местоположение обновлено');
       loadData();
     } catch (err) {
-      if (isNetworkError(err) && cachedLocation) {
-        Alert.alert('Сохранено локально', 'Местоположение сохранено на устройстве. Отправьте его повторно, когда сервер будет доступен.');
+      if (isRetryableRequestError(err) && cachedLocation) {
+        Alert.alert('Сохранено локально', 'Местоположение сохранено на устройстве. Отправьте его повторно, когда сервер снова будет доступен.');
         return;
       }
       Alert.alert(

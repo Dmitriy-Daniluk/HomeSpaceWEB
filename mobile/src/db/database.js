@@ -18,7 +18,21 @@ const sql = (statement, params = []) => (
   })
 );
 
+const runTransaction = (scheduleStatements) => (
+  new Promise((resolve, reject) => {
+    db.transaction(
+      (tx) => scheduleStatements(tx, reject),
+      reject,
+      resolve
+    );
+  })
+);
+
 const rowsFrom = (result) => result.rows?._array || [];
+const countFrom = async (statement, params = []) => {
+  const result = await sql(statement, params);
+  return Number(rowsFrom(result)[0]?.count || 0);
+};
 
 const normalizeId = (value) => (value === undefined || value === null ? null : String(value));
 
@@ -252,9 +266,65 @@ export const tasksDB = {
   },
 
   cacheRemoteList: async (tasks = []) => {
-    for (const task of tasks) {
-      await tasksDB.upsertRemote(task);
-    }
+    if (!tasks.length) return 0;
+
+    await runTransaction((tx, reject) => {
+      for (const task of tasks) {
+        const remoteId = remoteIdOf(task);
+        if (!remoteId) continue;
+
+        const insertValues = [
+          remoteId,
+          task.title,
+          task.description || null,
+          task.status || 'new',
+          task.priority || 'medium',
+          task.deadline || null,
+          task.executor_id || task.executorId || null,
+          task.executor_name || task.executorName || null,
+          task.family_id || task.familyId || null,
+        ];
+
+        tx.executeSql(
+          `INSERT OR IGNORE INTO tasks (
+            remote_id, title, description, status, priority, deadline,
+            executor_id, executor_name, family_id, synced, sync_action, deleted
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, 0)`,
+          insertValues,
+          undefined,
+          (_, error) => {
+            reject(error);
+            return false;
+          }
+        );
+
+        tx.executeSql(
+          `UPDATE tasks
+           SET title = ?, description = ?, status = ?, priority = ?, deadline = ?,
+               executor_id = ?, executor_name = ?, family_id = ?,
+               updated_at = CURRENT_TIMESTAMP, synced = 1, sync_action = NULL, deleted = 0
+           WHERE remote_id = ?`,
+          [
+            task.title,
+            task.description || null,
+            task.status || 'new',
+            task.priority || 'medium',
+            task.deadline || null,
+            task.executor_id || task.executorId || null,
+            task.executor_name || task.executorName || null,
+            task.family_id || task.familyId || null,
+            remoteId,
+          ],
+          undefined,
+          (_, error) => {
+            reject(error);
+            return false;
+          }
+        );
+      }
+    });
+
+    return tasks.length;
   },
 
   update: async (id, data) => {
@@ -431,9 +501,61 @@ export const transactionsDB = {
   },
 
   cacheRemoteList: async (transactions = []) => {
-    for (const transaction of transactions) {
-      await transactionsDB.upsertRemote(transaction);
-    }
+    if (!transactions.length) return 0;
+
+    await runTransaction((tx, reject) => {
+      for (const transaction of transactions) {
+        const remoteId = remoteIdOf(transaction);
+        if (!remoteId) continue;
+
+        const insertValues = [
+          remoteId,
+          transaction.type,
+          Number(transaction.amount || 0),
+          transaction.category || null,
+          transaction.description || null,
+          transaction.transaction_date || transaction.transactionDate || new Date().toISOString(),
+          transaction.family_id || transaction.familyId || null,
+        ];
+
+        tx.executeSql(
+          `INSERT OR IGNORE INTO transactions (
+            remote_id, type, amount, category, description, transaction_date,
+            family_id, synced, sync_action, deleted
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, 0)`,
+          insertValues,
+          undefined,
+          (_, error) => {
+            reject(error);
+            return false;
+          }
+        );
+
+        tx.executeSql(
+          `UPDATE transactions
+           SET type = ?, amount = ?, category = ?, description = ?,
+               transaction_date = ?, family_id = ?,
+               updated_at = CURRENT_TIMESTAMP, synced = 1, sync_action = NULL, deleted = 0
+           WHERE remote_id = ?`,
+          [
+            transaction.type,
+            Number(transaction.amount || 0),
+            transaction.category || null,
+            transaction.description || null,
+            transaction.transaction_date || transaction.transactionDate || new Date().toISOString(),
+            transaction.family_id || transaction.familyId || null,
+            remoteId,
+          ],
+          undefined,
+          (_, error) => {
+            reject(error);
+            return false;
+          }
+        );
+      }
+    });
+
+    return transactions.length;
   },
 
   update: async (id, data) => {
@@ -640,6 +762,75 @@ export const notificationsDB = {
         );
       });
     });
+  },
+};
+
+export const localCacheDB = {
+  getStats: async () => {
+    const [
+      syncedTasks,
+      pendingTasks,
+      syncedTransactions,
+      pendingTransactions,
+      attachments,
+      staleLocations,
+      notifications,
+    ] = await Promise.all([
+      countFrom('SELECT COUNT(*) as count FROM tasks WHERE synced = 1'),
+      countFrom('SELECT COUNT(*) as count FROM tasks WHERE synced = 0'),
+      countFrom('SELECT COUNT(*) as count FROM transactions WHERE synced = 1'),
+      countFrom('SELECT COUNT(*) as count FROM transactions WHERE synced = 0'),
+      countFrom('SELECT COUNT(*) as count FROM attachments'),
+      countFrom(
+        `SELECT COUNT(*) as count
+         FROM user_locations
+         WHERE julianday(COALESCE(recorded_at, created_at)) < julianday('now', '-14 days')`
+      ),
+      countFrom('SELECT COUNT(*) as count FROM notifications'),
+    ]);
+
+    return {
+      syncedTasks,
+      pendingTasks,
+      syncedTransactions,
+      pendingTransactions,
+      attachments,
+      staleLocations,
+      notifications,
+    };
+  },
+
+  cleanupStaleData: async () => {
+    const removedTasks = Number((await sql('DELETE FROM tasks WHERE synced = 1')).rowsAffected || 0);
+    const removedTransactions = Number((await sql('DELETE FROM transactions WHERE synced = 1')).rowsAffected || 0);
+    const removedAttachments = Number((await sql('DELETE FROM attachments')).rowsAffected || 0);
+    const removedLocations = Number((
+      await sql(
+        `DELETE FROM user_locations
+         WHERE julianday(COALESCE(recorded_at, created_at)) < julianday('now', '-14 days')`
+      )
+    ).rowsAffected || 0);
+    const removedNotifications = Number((await sql('DELETE FROM notifications')).rowsAffected || 0);
+
+    const after = {
+      pendingTasks: await countFrom('SELECT COUNT(*) as count FROM tasks WHERE synced = 0'),
+      pendingTransactions: await countFrom('SELECT COUNT(*) as count FROM transactions WHERE synced = 0'),
+    };
+
+    return {
+      after,
+      removed: {
+        tasks: removedTasks,
+        transactions: removedTransactions,
+        attachments: removedAttachments,
+        locations: removedLocations,
+        notifications: removedNotifications,
+      },
+      preserved: {
+        pendingTasks: after.pendingTasks,
+        pendingTransactions: after.pendingTransactions,
+      },
+    };
   },
 };
 

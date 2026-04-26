@@ -34,7 +34,7 @@ export const COLORS = {
   gradientAccent: '#d946ef',
 };
 
-const DEFAULT_PUBLIC_API_URL = 'спрятать';
+const DEFAULT_PUBLIC_API_URL = '';
 
 const normalizeApiUrl = (value) => {
   const normalized = String(value || '').trim().replace(/\/+$/, '');
@@ -44,7 +44,7 @@ const normalizeApiUrl = (value) => {
 
 // Public backend address for mobile clients. Keep credentials and private network details off the device.
 export const API_URL = normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL || DEFAULT_PUBLIC_API_URL);
-export const API_ORIGIN = API_URL.replace(/\/api$/, '');
+export const API_ORIGIN = API_URL ? API_URL.replace(/\/api$/, '') : '';
 
 export const STORAGE_KEYS = {
   TOKEN: 'homespace_token',

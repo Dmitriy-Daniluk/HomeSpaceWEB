@@ -27,6 +27,7 @@
         "backgroundColor": "#2563eb"
       },
       "package": "com.homespace.app",
+      "usesCleartextTraffic": true,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

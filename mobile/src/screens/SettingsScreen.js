@@ -15,6 +15,7 @@ import Header from '../components/Header';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { getPagePermissions, isChildOnlyUser } from '../utils/helpers';
 import {
   getNotificationPermissions,
   getPushEnabled,
@@ -22,14 +23,19 @@ import {
   scheduleTestNotification,
   setPushEnabled,
 } from '../utils/notificationService';
+import { cleanupLocalAppData } from '../utils/storageMaintenance';
 
 const SettingsScreen = ({ navigation }) => {
   const { colors, themeMode, toggleTheme } = useTheme();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [locationEnabled, setLocationEnabled] = useState(true);
   const [permissionStatus, setPermissionStatus] = useState('undetermined');
   const [testingPush, setTestingPush] = useState(false);
+  const [cleaningStorage, setCleaningStorage] = useState(false);
+  const permissions = getPagePermissions(user);
+  const isChildOnly = isChildOnlyUser(user);
+  const canOpenPasswords = !isChildOnly || permissions.has('passwords.view');
 
   useEffect(() => {
     loadNotificationSettings();
@@ -57,10 +63,6 @@ const SettingsScreen = ({ navigation }) => {
         onPress: () => logout(),
       },
     ]);
-  };
-
-  const handleSupport = () => {
-    Linking.openURL('mailto:support@homespace.app');
   };
 
   const handleNotificationsToggle = async (value) => {
@@ -108,6 +110,49 @@ const SettingsScreen = ({ navigation }) => {
     } finally {
       setTestingPush(false);
     }
+  };
+
+  const handleCleanupStorage = () => {
+    Alert.alert(
+      'Очистить локальный кэш',
+      'Мы удалим старый локальный кэш задач, бюджета, вложений, локаций и уведомлений. Аккаунт, тема и данные на сервере не пострадают.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Очистить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setCleaningStorage(true);
+              const result = await cleanupLocalAppData();
+              Alert.alert(
+                'Кэш очищен',
+                [
+                  `Задачи: ${result.removed.tasks}`,
+                  `Транзакции: ${result.removed.transactions}`,
+                  `Вложения: ${result.removed.attachments}`,
+                  `Старые локации: ${result.removed.locations}`,
+                  `Уведомления: ${result.removed.notifications}`,
+                  `Служебные ключи: ${result.storageKeysRemoved}`,
+                  result.preserved.pendingTasks || result.preserved.pendingTransactions
+                    ? `Несинхронизированные изменения сохранены: задач ${result.preserved.pendingTasks}, транзакций ${result.preserved.pendingTransactions}`
+                    : 'Несинхронизированных изменений не осталось.',
+                ].join('\n')
+              );
+            } catch (error) {
+              Alert.alert(
+                'Ошибка',
+                error?.message === 'Local storage cleanup timed out'
+                  ? 'Очистка локального кэша заняла слишком много времени. Закройте экран и попробуйте ещё раз.'
+                  : 'Не удалось очистить локальный кэш.'
+              );
+            } finally {
+              setCleaningStorage(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const openLink = (url) => {
@@ -158,13 +203,13 @@ const SettingsScreen = ({ navigation }) => {
           value: locationEnabled,
           onValueChange: setLocationEnabled,
         },
-        {
+        ...(canOpenPasswords ? [{
           icon: 'shield-lock-outline',
           label: 'Пароли',
           subtitle: 'Зашифрованное хранилище',
           type: 'navigate',
           onPress: () => navigation.navigate('Passwords'),
-        },
+        }] : []),
       ],
     },
     {
@@ -257,9 +302,26 @@ const SettingsScreen = ({ navigation }) => {
           />
         </Card>
 
+        <Card style={styles.sectionCard}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Хранилище</Text>
+          <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+            Удаляет старый локальный кэш приложения и служебные данные синхронизации. Вход в аккаунт,
+            тема оформления и данные на сервере сохраняются.
+          </Text>
+          <Button
+            title="Очистить локальный кэш"
+            onPress={handleCleanupStorage}
+            loading={cleaningStorage}
+            variant="outline"
+            icon="broom"
+            fullWidth
+            style={styles.testButton}
+          />
+        </Card>
+
         <Button
           title="Написать в поддержку"
-          onPress={handleSupport}
+          onPress={() => navigation.navigate('Support')}
           variant="outline"
           icon="lifebuoy"
           fullWidth

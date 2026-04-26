@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Linking,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
@@ -24,6 +26,7 @@ const ChatScreen = ({ route, navigation }) => {
   const initialFamilyId = route.params?.familyId || null;
   const { colors } = useTheme();
   const { user } = useAuth();
+  const isFocused = useIsFocused();
   const [families, setFamilies] = useState([]);
   const [selectedFamily, setSelectedFamily] = useState(initialFamilyId);
   const [messages, setMessages] = useState([]);
@@ -32,34 +35,18 @@ const ChatScreen = ({ route, navigation }) => {
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const flatListRef = useRef(null);
 
-  useEffect(() => {
-    loadFamilies();
-  }, []);
-
-  useEffect(() => {
-    if (!selectedFamily) {
-      return undefined;
-    }
-
-    loadMessages();
-    const interval = setInterval(loadMessages, 10000);
-    return () => clearInterval(interval);
-  }, [selectedFamily]);
-
-  const loadFamilies = async () => {
+  const loadFamilies = useCallback(async () => {
     try {
       const response = await chatApi.getFamilies();
       const data = toArrayData(response);
       setFamilies(data);
-      if (!selectedFamily && data.length > 0) {
-        setSelectedFamily(data[0].id);
-      }
+      setSelectedFamily((current) => current || data[0]?.id || null);
     } catch (err) {
       console.error('Ошибка загрузки семей для чата:', err);
     }
-  };
+  }, []);
 
-  const loadMessages = async () => {
+  const loadMessages = useCallback(async () => {
     if (!selectedFamily) {
       return;
     }
@@ -70,7 +57,22 @@ const ChatScreen = ({ route, navigation }) => {
     } catch (err) {
       console.error('Ошибка загрузки сообщений:', err);
     }
-  };
+  }, [selectedFamily]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadFamilies();
+  }, [isFocused, loadFamilies]);
+
+  useEffect(() => {
+    if (!isFocused || !selectedFamily) {
+      return undefined;
+    }
+
+    loadMessages();
+    const interval = setInterval(loadMessages, 30000);
+    return () => clearInterval(interval);
+  }, [isFocused, selectedFamily, loadMessages]);
 
   const sendMessage = async () => {
     if (!inputText.trim()) {
@@ -146,6 +148,25 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
+  const openAttachment = async (message) => {
+    const attachmentUrl = message?.attachment_url || message?.attachmentUrl;
+    if (!attachmentUrl) {
+      Alert.alert('Файл недоступен', 'Для этого сообщения нет ссылки на вложение.');
+      return;
+    }
+
+    try {
+      const supported = await Linking.canOpenURL(attachmentUrl);
+      if (!supported) {
+        Alert.alert('Не удалось открыть', 'Устройство не поддерживает открытие этого файла.');
+        return;
+      }
+      await Linking.openURL(attachmentUrl);
+    } catch (error) {
+      Alert.alert('Ошибка', 'Не удалось открыть вложение.');
+    }
+  };
+
   const renderMessage = ({ item, index }) => {
     const senderId = item.senderId || item.sender_id;
     const previousSenderId = messages[index - 1]?.senderId || messages[index - 1]?.sender_id;
@@ -178,6 +199,27 @@ const ChatScreen = ({ route, navigation }) => {
           <Text style={[styles.messageText, isMine ? { color: '#ffffff' } : { color: colors.text }]}>
             {item.content}
           </Text>
+          {(item.attachment_url || item.attachmentUrl) ? (
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => openAttachment(item)}
+              style={styles.attachmentButton}
+            >
+              <Icon
+                name="paperclip"
+                size={14}
+                color={isMine ? 'rgba(255,255,255,0.9)' : colors.primary}
+              />
+              <Text
+                style={[
+                  styles.attachmentText,
+                  isMine ? { color: '#ffffff' } : { color: colors.primary },
+                ]}
+              >
+                Открыть вложение
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           <Text
             style={[
               styles.messageTime,
@@ -369,6 +411,17 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 15,
     lineHeight: 20,
+  },
+  attachmentButton: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  attachmentText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   messageTime: {
     fontSize: 10,

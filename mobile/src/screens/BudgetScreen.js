@@ -9,9 +9,8 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Card from '../components/Card';
 import TransactionItem from '../components/TransactionItem';
@@ -23,15 +22,14 @@ import { transactionsDB } from '../db/database';
 import { canAccessFamilyFeature, formatCurrency } from '../utils/helpers';
 import {
   buildBudgetSummary,
-  isNetworkError,
+  isRetryableRequestError,
   syncPendingTransactions,
   toArrayData,
 } from '../utils/syncService';
 
 const BudgetScreen = ({ navigation }) => {
   const { colors } = useTheme();
-  const { refreshUser } = useAuth();
-  const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ income: 0, expense: 0, balance: 0 });
   const [period, setPeriod] = useState('all');
@@ -41,23 +39,7 @@ const BudgetScreen = ({ navigation }) => {
   const [families, setFamilies] = useState([]);
   const [selectedFamily, setSelectedFamily] = useState(null);
 
-  useEffect(() => {
-    loadFamilies();
-  }, []);
-
-  useEffect(() => {
-    loadBudget();
-  }, [period, mode, selectedFamily]);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadFamilies();
-      loadBudget();
-    });
-    return unsubscribe;
-  }, [navigation, period, mode, selectedFamily]);
-
-  const loadFamilies = async () => {
+  const loadFamilies = useCallback(async () => {
     try {
       const response = await familiesApi.getAll();
       const nextFamilies = toArrayData(response).filter((family) => canAccessFamilyFeature(family, 'budget.view'));
@@ -73,14 +55,12 @@ const BudgetScreen = ({ navigation }) => {
           return nextFamilies[0].id;
         });
       }
-
-      await refreshUser();
     } catch (err) {
       console.error('Ошибка загрузки семей:', err);
     }
-  };
+  }, []);
 
-  const loadBudget = async () => {
+  const loadBudget = useCallback(async () => {
     try {
       setLoading(true);
       if (mode === 'family' && !selectedFamily) {
@@ -119,12 +99,22 @@ const BudgetScreen = ({ navigation }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [mode, period, selectedFamily]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadFamilies();
+  }, [isFocused, loadFamilies]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadBudget();
+  }, [isFocused, loadBudget]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadBudget();
-  }, [period, mode, selectedFamily]);
+  }, [loadBudget]);
 
   const handleDelete = (transaction) => {
     const transactionId = transaction?.remote_id || transaction?.id;
@@ -147,7 +137,7 @@ const BudgetScreen = ({ navigation }) => {
               return next;
             });
           } catch (err) {
-            if (isNetworkError(err)) {
+            if (isRetryableRequestError(err)) {
               await transactionsDB.markDeleted(transaction?.id || transactionId);
               setTransactions((prev) => {
                 const next = prev.filter((t) => String(t.id) !== String(transaction?.id || transactionId));

@@ -7,7 +7,9 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
@@ -30,6 +32,7 @@ const EMPTY_CREATE_FORM = {
 const FamilyScreen = ({ navigation }) => {
   const { colors } = useTheme();
   const { user, refreshUser } = useAuth();
+  const isFocused = useIsFocused();
   const isChildOnly = Boolean(user?.isChildOnly || user?.is_child_only);
 
   const [families, setFamilies] = useState([]);
@@ -42,16 +45,7 @@ const FamilyScreen = ({ navigation }) => {
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
 
-  useEffect(() => {
-    loadFamilies();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => loadFamilies());
-    return unsubscribe;
-  }, [navigation]);
-
-  const loadFamilies = async () => {
+  const loadFamilies = useCallback(async () => {
     try {
       setLoading(true);
       const response = await familiesApi.getAll();
@@ -62,12 +56,17 @@ const FamilyScreen = ({ navigation }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadFamilies();
+  }, [isFocused, loadFamilies]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadFamilies();
-  }, []);
+  }, [loadFamilies]);
 
   const handleCreateFamily = async () => {
     if (!createForm.name.trim()) {
@@ -188,18 +187,46 @@ const FamilyScreen = ({ navigation }) => {
     </View>
   );
 
+  const renderEmptyFamilies = () => (
+    <View style={styles.emptyWrap}>
+      <EmptyState
+        icon="home-heart"
+        title="Семей пока нет"
+        description={isChildOnly ? 'Вступите в семью по коду приглашения' : 'Создайте семью или вступите по коду'}
+      />
+      <View style={styles.emptyActions}>
+        <Button
+          title="Вступить по коду"
+          onPress={() => setShowJoinModal(true)}
+          icon="account-plus"
+          variant={isChildOnly ? 'primary' : 'outline'}
+          fullWidth
+          style={styles.emptyActionButton}
+        />
+        {!isChildOnly ? (
+          <Button
+            title="Создать семью"
+            onPress={() => setShowCreateModal(true)}
+            icon="plus"
+            fullWidth
+            style={styles.emptyActionButton}
+          />
+        ) : null}
+      </View>
+    </View>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Header title="Семья" />
 
-      {families.length === 0 && !loading ? (
-        <EmptyState
-          icon="home-heart"
-          title="Семей пока нет"
-          description={isChildOnly ? 'Вступите в семью по коду приглашения' : 'Создайте семью или вступите по коду'}
-          actionTitle={isChildOnly ? 'Вступить по коду' : 'Создать семью'}
-          onAction={() => (isChildOnly ? setShowJoinModal(true) : setShowCreateModal(true))}
-        />
+      {loading && families.length === 0 ? (
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Загружаем семьи...</Text>
+        </View>
+      ) : families.length === 0 ? (
+        renderEmptyFamilies()
       ) : (
         <FlatList
           data={families}
@@ -291,6 +318,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginBottom: 16,
+  },
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  emptyWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 32,
+  },
+  emptyActions: {
+    gap: 10,
+    marginTop: -8,
+  },
+  emptyActionButton: {
+    marginBottom: 0,
   },
   actionButton: {
     flex: 1,

@@ -1,7 +1,14 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useContext,
+  useCallback,
+} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../utils/constants';
 import { auth } from '../utils/api';
+import { subscribeAuthExpired } from '../utils/authEvents';
 
 const AuthContext = createContext({});
 
@@ -15,15 +22,24 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     loadStoredData();
+
+    const unsubscribe = subscribeAuthExpired(async () => {
+      setToken(null);
+      setUser(null);
+      await AsyncStorage.removeItem(STORAGE_KEYS.TOKEN);
+      await AsyncStorage.removeItem(STORAGE_KEYS.USER);
+    });
+
+    return unsubscribe;
   }, []);
 
-  const persistUser = async (nextUser) => {
+  const persistUser = useCallback(async (nextUser) => {
     setUser(nextUser);
     await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(nextUser));
     return nextUser;
-  };
+  }, []);
 
-  const refreshUser = async (fallbackUser = user) => {
+  const refreshUser = useCallback(async (fallbackUser = user) => {
     try {
       const response = await auth.getMe();
       const freshUser = response.data?.data || response.data;
@@ -34,9 +50,9 @@ export const AuthProvider = ({ children }) => {
       }
       throw error;
     }
-  };
+  }, [persistUser, user]);
 
-  const loadStoredData = async () => {
+  const loadStoredData = useCallback(async () => {
     try {
       const storedToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
       const storedUser = await AsyncStorage.getItem(STORAGE_KEYS.USER);
@@ -55,9 +71,9 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [refreshUser]);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     try {
       setError(null);
       setLoading(true);
@@ -79,9 +95,9 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [refreshUser, persistUser]);
 
-  const register = async (fullName, email, password) => {
+  const register = useCallback(async (fullName, email, password) => {
     try {
       setError(null);
       setLoading(true);
@@ -103,9 +119,9 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [refreshUser, persistUser]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await auth.logout();
     } catch (e) {
@@ -116,11 +132,11 @@ export const AuthProvider = ({ children }) => {
       await AsyncStorage.removeItem(STORAGE_KEYS.TOKEN);
       await AsyncStorage.removeItem(STORAGE_KEYS.USER);
     }
-  };
+  }, []);
 
-  const updateUser = async (userData) => {
+  const updateUser = useCallback(async (userData) => {
     await persistUser(userData);
-  };
+  }, [persistUser]);
 
   const value = {
     user,

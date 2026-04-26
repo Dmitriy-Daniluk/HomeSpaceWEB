@@ -624,6 +624,27 @@ exports.removeMember = async (req, res, next) => {
   }
 };
 
+exports.deleteFamily = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const parent = await requireParent(req.user.id, id);
+    if (!parent.ok) {
+      return res.status(parent.status).json(parent.body);
+    }
+
+    const [result] = await pool.query('DELETE FROM families WHERE id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Family not found' });
+    }
+
+    res.json({ message: 'Family deleted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.updateMemberRole = async (req, res, next) => {
   try {
     const familyId = req.params.familyId || req.params.id;

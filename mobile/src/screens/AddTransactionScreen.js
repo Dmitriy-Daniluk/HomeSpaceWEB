@@ -19,7 +19,7 @@ import { budget as budgetApi } from '../utils/api';
 import { transactionsDB } from '../db/database';
 import { TRANSACTION_TYPE, TRANSACTION_TYPE_LABELS, TRANSACTION_CATEGORIES } from '../utils/constants';
 import { formatCurrency, formatDateForApi } from '../utils/helpers';
-import { getResponseData, isNetworkError } from '../utils/syncService';
+import { getResponseData, isRetryableRequestError } from '../utils/syncService';
 
 const AddTransactionScreen = ({ route, navigation }) => {
   const { familyId } = route.params || {};
@@ -68,7 +68,7 @@ const AddTransactionScreen = ({ route, navigation }) => {
       await transactionsDB.upsertRemote(getResponseData(response));
       navigation.goBack();
     } catch (err) {
-      if (isNetworkError(err)) {
+      if (isRetryableRequestError(err)) {
         await transactionsDB.insertLocal({
           type,
           amount: numAmount,
@@ -77,7 +77,7 @@ const AddTransactionScreen = ({ route, navigation }) => {
           transaction_date: transactionDate,
           family_id: familyId || null,
         });
-        Alert.alert('Сохранено локально', 'Транзакция отправится на сервер, когда появится подключение.');
+        Alert.alert('Сохранено локально', 'Транзакция отправится на сервер, когда он снова будет доступен.');
         navigation.goBack();
         return;
       }

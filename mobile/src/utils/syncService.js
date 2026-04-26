@@ -5,6 +5,10 @@ import { tasksDB, transactionsDB } from '../db/database';
 import { formatDateForApi } from './helpers';
 
 export const isNetworkError = (error) => !error?.response;
+export const isRetryableRequestError = (error) => {
+  const status = error?.response?.status;
+  return !status || [408, 425, 429, 500, 502, 503, 504].includes(Number(status));
+};
 
 export const getResponseData = (response) => {
   const body = response?.data;

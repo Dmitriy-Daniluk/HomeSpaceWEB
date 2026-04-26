@@ -28,6 +28,7 @@ import NotificationsScreen from './screens/NotificationsScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import FilesScreen from './screens/FilesScreen';
 import SubscriptionScreen from './screens/SubscriptionScreen';
+import SupportScreen from './screens/SupportScreen';
 import { initializeNotifications } from './utils/notificationService';
 
 LogBox.ignoreAllLogs();
@@ -153,6 +154,7 @@ const AppNavigator = () => {
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="Files" component={FilesScreen} />
             <Stack.Screen name="Subscription" component={SubscriptionScreen} />
+            <Stack.Screen name="Support" component={SupportScreen} />
           </>
         )}
       </Stack.Navigator>

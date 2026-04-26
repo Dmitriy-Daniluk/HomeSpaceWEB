@@ -22,7 +22,7 @@ export const Skeleton = ({ width = '100%', height = 20, style }) => {
   const [animValue] = React.useState(new Animated.Value(0));
 
   React.useEffect(() => {
-    Animated.loop(
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(animValue, {
           toValue: 1,
@@ -35,8 +35,15 @@ export const Skeleton = ({ width = '100%', height = 20, style }) => {
           useNativeDriver: true,
         }),
       ])
-    ).start();
-  }, []);
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+      animValue.stopAnimation();
+    };
+  }, [animValue]);
 
   const opacity = animValue.interpolate({
     inputRange: [0, 1],

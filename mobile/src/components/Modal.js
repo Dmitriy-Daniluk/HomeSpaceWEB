@@ -14,21 +14,26 @@ const BottomSheetModal = ({
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (visible) {
-      Animated.spring(slideAnim, {
+    const animation = visible
+      ? Animated.spring(slideAnim, {
         toValue: 1,
         useNativeDriver: true,
         tension: 65,
         friction: 11,
-      }).start();
-    } else {
-      Animated.timing(slideAnim, {
+      })
+      : Animated.timing(slideAnim, {
         toValue: 0,
         duration: 250,
         useNativeDriver: true,
-      }).start();
-    }
-  }, [visible]);
+      });
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+      slideAnim.stopAnimation();
+    };
+  }, [slideAnim, visible]);
 
   const translateY = slideAnim.interpolate({
     inputRange: [0, 1],

@@ -4,6 +4,27 @@ const { serializeAuthUser } = require('../utils/authUser');
 
 const getJwtSecret = () => process.env.JWT_SECRET || 'homespace-secret';
 
+const resolveAuthUser = async (token) => {
+  const decoded = jwt.verify(token, getJwtSecret());
+
+  if (!decoded.id) {
+    throw new Error('Invalid or expired token');
+  }
+
+  const [users] = await pool.query(
+    `SELECT id, email, full_name, birth_date, phone, avatar_url, role,
+            has_subscription, subscription_until, created_at
+     FROM users WHERE id = ?`,
+    [decoded.id]
+  );
+
+  if (users.length === 0) {
+    throw new Error('Invalid or expired token');
+  }
+
+  return serializeAuthUser(users[0]);
+};
+
 const auth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -12,27 +33,25 @@ const auth = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, getJwtSecret());
-
-    if (!decoded.id) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
-    }
-
-    const [users] = await pool.query(
-      `SELECT id, email, full_name, birth_date, phone, avatar_url, role,
-              has_subscription, subscription_until, created_at
-       FROM users WHERE id = ?`,
-      [decoded.id]
-    );
-
-    if (users.length === 0) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
-    }
-
-    req.user = serializeAuthUser(users[0]);
+    req.user = await resolveAuthUser(token);
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+};
+
+const optionalAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
+    const token = authHeader.split(' ')[1];
+    req.user = await resolveAuthUser(token);
+    next();
+  } catch (error) {
+    next();
   }
 };
 
@@ -71,4 +90,4 @@ const isParent = (familyIdParam = 'familyId') => async (req, res, next) => {
   }
 };
 
-module.exports = { auth, isParent, isAdmin };
+module.exports = { auth, optionalAuth, isParent, isAdmin };

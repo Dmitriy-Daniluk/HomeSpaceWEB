@@ -15,6 +15,7 @@ router.post('/join', auth, familyController.joinByCode);
 router.put('/:id', auth, familyController.updateFamily);
 router.put('/:id/member/:userId/role', auth, familyController.updateMemberRole);
 router.put('/:id/roles/:roleId', auth, familyController.updateCustomRole);
+router.delete('/:id', auth, familyController.deleteFamily);
 router.delete('/:id/roles/:roleId', auth, familyController.deleteCustomRole);
 router.delete('/:id/member/:userId', auth, familyController.removeMember);
 

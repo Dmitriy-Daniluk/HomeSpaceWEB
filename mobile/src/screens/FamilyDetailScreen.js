@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   FlatList,
   Share,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
@@ -35,6 +36,7 @@ const FamilyDetailScreen = ({ route, navigation }) => {
   const { familyId } = route.params;
   const { colors } = useTheme();
   const { refreshUser } = useAuth();
+  const isFocused = useIsFocused();
 
   const [family, setFamily] = useState(null);
   const [members, setMembers] = useState([]);
@@ -59,10 +61,6 @@ const FamilyDetailScreen = ({ route, navigation }) => {
   });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadFamily();
-  }, [familyId]);
-
   const isParent = family?.role === 'parent';
   const canManageCustomRoles = Boolean(isParent && (family?.currentUserHasSubscription || family?.current_user_has_subscription));
   const savingsGoal = Number(family?.savings_goal || 0);
@@ -72,7 +70,7 @@ const FamilyDetailScreen = ({ route, navigation }) => {
     [totalSaved, savingsGoal]
   );
 
-  const loadFamily = async () => {
+  const loadFamily = useCallback(async () => {
     try {
       setLoading(true);
       const response = await familiesApi.getById(familyId);
@@ -93,7 +91,12 @@ const FamilyDetailScreen = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [familyId]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadFamily();
+  }, [isFocused, loadFamily]);
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) {
@@ -165,6 +168,35 @@ const FamilyDetailScreen = ({ route, navigation }) => {
         },
       },
     ]);
+  };
+
+  const handleDeleteFamily = () => {
+    Alert.alert(
+      'Расформировать семью',
+      'Семья и все связанные данные будут удалены без возможности восстановления.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Расформировать',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSaving(true);
+              await familiesApi.delete(familyId);
+              await refreshUser();
+              navigation.navigate('MainTabs', { screen: 'Family' });
+            } catch (err) {
+              Alert.alert(
+                'Ошибка',
+                err.response?.data?.message || err.response?.data?.error || 'Не удалось расформировать семью'
+              );
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const shareInviteCode = async () => {
@@ -541,6 +573,15 @@ const FamilyDetailScreen = ({ route, navigation }) => {
           loading={saving}
           fullWidth
           icon="content-save-outline"
+        />
+        <Button
+          title="Расформировать семью"
+          onPress={handleDeleteFamily}
+          loading={saving}
+          fullWidth
+          variant="danger"
+          icon="delete-forever"
+          style={{ marginTop: 12 }}
         />
       </BottomSheetModal>
 

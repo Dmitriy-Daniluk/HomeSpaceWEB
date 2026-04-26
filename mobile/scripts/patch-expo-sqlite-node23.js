@@ -20,6 +20,7 @@ const expoCliRoot = path.join(__dirname, '..', 'node_modules', '@expo', 'cli');
 const rnCliServerApiRoot = path.join(__dirname, '..', 'node_modules', '@react-native-community', 'cli-server-api');
 const rnCliToolsRoot = path.join(__dirname, '..', 'node_modules', '@react-native-community', 'cli-tools');
 const rnCommunityCliPluginRoot = path.join(__dirname, '..', 'node_modules', '@react-native', 'community-cli-plugin');
+const rnGradlePluginRoot = path.join(__dirname, '..', 'node_modules', '@react-native', 'gradle-plugin');
 
 if (!fs.existsSync(packageRoot)) {
   console.log('[patch-expo-sqlite-node23] expo-sqlite is not installed, skipping.');
@@ -81,6 +82,28 @@ updateFile(path.join(rnCommunityCliPluginRoot, 'dist', 'utils', 'isDevServerRunn
     'statusResponse.headers.get("X-React-Native-Project-Root") === projectRoot',
     'decodeURIComponent(statusResponse.headers.get("X-React-Native-Project-Root") ?? "") === projectRoot'
   )
+);
+
+updateFile(path.join(rnGradlePluginRoot, 'build.gradle.kts'), (content) =>
+  content.replace(
+    'kotlin { jvmToolchain(17) }',
+    'kotlin { jvmToolchain(21) }'
+  )
+);
+
+updateFile(
+  path.join(
+    rnGradlePluginRoot,
+    'src',
+    'main',
+    'kotlin',
+    'com',
+    'facebook',
+    'react',
+    'utils',
+    'JdkConfiguratorUtils.kt'
+  ),
+  (content) => content.split('jvmToolchain(17)').join('jvmToolchain(21)')
 );
 
 console.log(`[patch-expo-sqlite-node23] patched files: ${changedFiles}`);

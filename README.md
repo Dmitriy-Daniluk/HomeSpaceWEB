@@ -178,6 +178,18 @@ npx expo start
 
 > На Windows PowerShell может блокировать `npm.ps1`. В таком случае используйте `npm.cmd install`, `npm.cmd run dev`, `npm.cmd run build`.
 
+### Подключение мобильного приложения к серверному API
+
+`SSH` нужен только для доступа разработчика к серверу. Само мобильное приложение должно подключаться к публичному адресу backend API по `HTTPS`, например `https://api.example.com/api`.
+
+1. На сервере поднимите backend за обратным прокси (`Nginx`/`Caddy`) и выдайте ему домен вроде `api.example.com`.
+2. Проверьте, что backend отвечает снаружи по `GET https://api.example.com/api/health`.
+3. В мобильном приложении создайте файл `mobile/.env` на основе `mobile/.env.example`.
+4. Укажите `EXPO_PUBLIC_API_URL=https://api.example.com`.
+5. Перезапустите Expo после изменения `.env`, чтобы приложение пересобрало публичные переменные окружения.
+
+Прямое подключение мобильного клиента к MySQL не нужно и небезопасно. Схема должна быть такой: `mobile app -> HTTPS API -> backend -> database`.
+
 ---
 
 ## 📁 Структура проекта

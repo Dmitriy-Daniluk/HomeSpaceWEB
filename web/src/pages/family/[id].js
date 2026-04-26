@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -11,6 +11,7 @@ import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
 import Loading from '../../components/ui/Loading';
+import useAutoRefresh from '../../hooks/useAutoRefresh';
 
 const permissionOptions = [
   { value: 'budget.view', label: 'Бюджет' },
@@ -38,13 +39,12 @@ export default function FamilyPage() {
   const [roleUpdating, setRoleUpdating] = useState({});
   const [customRoleForm, setCustomRoleForm] = useState({ name: '', color: '#6366f1', permissions: [] });
   const [customRoleSaving, setCustomRoleSaving] = useState(false);
+  const [deletingFamily, setDeletingFamily] = useState(false);
 
-  useEffect(() => {
-    if (id) fetchFamily();
-  }, [id]);
+  const fetchFamily = useCallback(async ({ background = false } = {}) => {
+    if (!id) return;
 
-  const fetchFamily = async () => {
-    setLoading(true);
+    if (!background) setLoading(true);
     try {
       const [res, overviewRes] = await Promise.all([
         api.get(`/families/${id}`),
@@ -54,14 +54,22 @@ export default function FamilyPage() {
       const nextFamily = payload.family ? { ...payload.family, ...payload } : payload;
       setFamily(nextFamily);
       setOverview(overviewRes?.data?.data || null);
-      setEditName(nextFamily.name);
-      setEditGoal(nextFamily.savings_goal || '');
+      if (!showEditModal) {
+        setEditName(nextFamily.name);
+        setEditGoal(nextFamily.savings_goal || '');
+      }
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
-  };
+  }, [id, showEditModal]);
+
+  useEffect(() => {
+    if (id) fetchFamily();
+  }, [id, fetchFamily]);
+
+  useAutoRefresh(() => fetchFamily({ background: true }), { enabled: Boolean(id) });
 
   const inviteMember = async (e) => {
     e.preventDefault();
@@ -206,6 +214,23 @@ export default function FamilyPage() {
   const copyInviteCode = () => {
     if (family?.invite_code) {
       navigator.clipboard.writeText(family.invite_code);
+    }
+  };
+
+  const deleteFamily = async () => {
+    if (!window.confirm('Расформировать семью? Все связанные данные будут удалены без возможности восстановления.')) {
+      return;
+    }
+
+    setDeletingFamily(true);
+    try {
+      await api.delete(`/families/${id}`);
+      await router.push('/family');
+    } catch (err) {
+      console.error(err);
+      window.alert(err.response?.data?.message || err.response?.data?.error || 'Не удалось расформировать семью.');
+    } finally {
+      setDeletingFamily(false);
     }
   };
 
@@ -637,6 +662,15 @@ export default function FamilyPage() {
               <Button variant="secondary" onClick={() => setShowEditModal(false)} className="flex-1">Отмена</Button>
               <Button variant="primary" onClick={saveSettings} loading={saving} className="flex-1" icon={<Edit2 className="w-4 h-4" />}>Сохранить</Button>
             </div>
+            <Button
+              variant="danger"
+              onClick={deleteFamily}
+              loading={deletingFamily}
+              className="w-full"
+              icon={<Trash2 className="w-4 h-4" />}
+            >
+              Расформировать семью
+            </Button>
           </div>
         </Modal>
       </div>

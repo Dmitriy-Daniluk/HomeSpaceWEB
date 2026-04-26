@@ -1,9 +1,49 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL, STORAGE_KEYS } from './constants';
+import { API_ORIGIN, API_URL, STORAGE_KEYS } from './constants';
+import { emitAuthExpired } from './authEvents';
+
+const isRelativeUploadPath = (value) => typeof value === 'string' && value.startsWith('/uploads/');
+const isPlainObject = (value) => Object.prototype.toString.call(value) === '[object Object]';
+const resolveFamilyId = (data) => data?.familyId ?? data?.family_id ?? null;
+const withFamilyParams = (data, config = {}) => {
+  const familyId = resolveFamilyId(data);
+  if (!familyId) {
+    return config;
+  }
+
+  return {
+    ...config,
+    params: {
+      ...(config.params || {}),
+      familyId,
+    },
+  };
+};
+
+const resolveApiAssetUrl = (value) => {
+  if (!isRelativeUploadPath(value) || !API_ORIGIN) {
+    return value;
+  }
+  return `${API_ORIGIN}${value}`;
+};
+
+const normalizeResponseData = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(normalizeResponseData);
+  }
+
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entryValue]) => [key, normalizeResponseData(entryValue)])
+    );
+  }
+
+  return resolveApiAssetUrl(value);
+};
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_URL || undefined,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
@@ -12,6 +52,10 @@ const api = axios.create({
 
 api.interceptors.request.use(
   async (config) => {
+    if (!API_URL) {
+      return Promise.reject(new Error('EXPO_PUBLIC_API_URL is not configured. Set it in mobile/.env.'));
+    }
+
     const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -22,11 +66,15 @@ api.interceptors.request.use(
 );
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    response.data = normalizeResponseData(response.data);
+    return response;
+  },
   async (error) => {
     if (error.response?.status === 401) {
       await AsyncStorage.removeItem(STORAGE_KEYS.TOKEN);
       await AsyncStorage.removeItem(STORAGE_KEYS.USER);
+      emitAuthExpired();
     }
     return Promise.reject(error);
   }
@@ -46,10 +94,10 @@ export const auth = {
 export const tasks = {
   getAll: (params) => api.get('/tasks', { params }),
   getById: (id) => api.get(`/tasks/${id}`),
-  create: (data) => api.post('/tasks', data),
-  update: (id, data) => api.put(`/tasks/${id}`, data),
+  create: (data) => api.post('/tasks', data, withFamilyParams(data)),
+  update: (id, data) => api.put(`/tasks/${id}`, data, withFamilyParams(data)),
   delete: (id) => api.delete(`/tasks/${id}`),
-  changeStatus: (id, status) => api.patch(`/tasks/${id}/status`, { status }),
+  changeStatus: (id, status) => api.put(`/tasks/${id}`, { status }),
   addAttachment: (id, formData) => {
     formData.append('relatedTaskId', id);
     return api.post('/files/upload', formData, {
@@ -62,8 +110,8 @@ export const tasks = {
 export const budget = {
   getTransactions: (params) => api.get('/budget', { params }),
   getTransaction: (id) => api.get(`/budget/${id}`),
-  createTransaction: (data) => api.post('/budget', data),
-  updateTransaction: (id, data) => api.put(`/budget/${id}`, data),
+  createTransaction: (data) => api.post('/budget', data, withFamilyParams(data)),
+  updateTransaction: (id, data) => api.put(`/budget/${id}`, data, withFamilyParams(data)),
   deleteTransaction: (id) => api.delete(`/budget/${id}`),
   getSummary: (params) => api.get('/budget/stats', { params }),
   getCategories: () => api.get('/budget/categories'),
@@ -144,6 +192,10 @@ export const support = {
   getTickets: () => api.get('/support/my'),
   getTicket: (id) => api.get(`/support/${id}`),
   addMessage: (id, data) => api.post(`/support/${id}/messages`, data),
+};
+
+export const feedback = {
+  submit: (data) => api.post('/feedback', data),
 };
 
 export const analytics = {
